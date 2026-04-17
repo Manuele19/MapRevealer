@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Map Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    transition: background .2s, background-color .2s;
+  }
+
+  /* Background presets */
+  body.bg-checker {
+    background-color: #f0f0f0;
+    background-image:
+      linear-gradient(45deg, #ccc 25%, transparent 25%),
+      linear-gradient(-45deg, #ccc 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ccc 75%),
+      linear-gradient(-45deg, transparent 75%, #ccc 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  }
+  body.bg-black  { background: #111; }
+  body.bg-white  { background: #fff; }
+  body.bg-gray   { background: #888; }
+  body.bg-paper  { background: #f5e6c8; }
+
+  #bgBar {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 14px; background: rgba(30,30,50,0.85);
+    z-index: 20; backdrop-filter: blur(4px);
+  }
+  #bgBar span { color: #aaa; font-size: 13px; margin-right: 4px; }
+  #bgBar button {
+    width: 28px; height: 28px; border: 2px solid #555; border-radius: 6px;
+    cursor: pointer; transition: border-color .15s;
+  }
+  #bgBar button.active { border-color: #e94560; box-shadow: 0 0 6px rgba(233,69,96,0.5); }
+  #bgBar button[data-bg="checker"] {
+    background-image:
+      linear-gradient(45deg, #ccc 25%, transparent 25%),
+      linear-gradient(-45deg, #ccc 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ccc 75%),
+      linear-gradient(-45deg, transparent 75%, #ccc 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+    background-color: #f0f0f0;
+  }
+  #bgBar button[data-bg="black"] { background: #111; }
+  #bgBar button[data-bg="white"] { background: #fff; }
+  #bgBar button[data-bg="gray"]  { background: #888; }
+  #bgBar button[data-bg="paper"] { background: #f5e6c8; }
+
+  #fsBtn {
+    margin-left: auto;
+    background: rgba(15,52,96,0.7); color: #eee;
+    line-height: 1;
+    border: 2px solid #555 !important;
+    width: auto !important; padding: 4px 10px;
+    display: inline-flex; align-items: center;
+  }
+  #fsBtn svg { width: 16px; height: 16px; }
+  #fsBtn:hover { background: rgba(26,74,122,0.9); border-color: #888 !important; }
+
+  /* Fullscreen mode: auto-hide bar, show when hovering top edge */
+  body.fs-active #bgBar {
+    transform: translateY(-100%);
+    transition: transform .25s ease;
+  }
+  body.fs-active #bgBar:hover,
+  body.fs-active.fs-reveal #bgBar {
+    transform: translateY(0);
+  }
+  #topHoverZone {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 30px; z-index: 15;
+  }
+  body.fs-active #topHoverZone { display: block; }
+  body.fs-active #previewContainer {
+    max-width: 100vw; max-height: 100vh;
+    border: none; box-shadow: none;
+  }
+
+  #previewContainer {
+    position: relative;
+    max-width: 95vw;
+    max-height: calc(95vh - 40px);
+    border: 1px solid rgba(128,128,128,0.4);
+    box-shadow: 0 0 0 1px rgba(128,128,128,0.15);
+  }
+  #previewContainer canvas {
+    position: absolute; top: 0; left: 0; display: block;
+  }
+
+  #waiting {
+    position: fixed; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 20px; color: #666;
+    background: rgba(255,255,255,0.85); z-index: 10;
+  }
+</style>
+</head>
+<body class="bg-checker">
+
+<div id="bgBar">
+  <span data-i18n="background">Background</span><span>:</span>
+  <button data-bg="checker" class="active" data-i18n-title="checker"></button>
+  <button data-bg="black" data-i18n-title="black"></button>
+  <button data-bg="white" data-i18n-title="white"></button>
+  <button data-bg="gray" data-i18n-title="gray"></button>
+  <button data-bg="paper" data-i18n-title="paper"></button>
+  <button id="fsBtn" title="Fullscreen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg></button>
+</div>
+<div id="topHoverZone"></div>
+
+<div id="waiting" data-i18n="waiting">Waiting for data from editor...</div>
+
+<div id="previewContainer">
+  <canvas id="revealedCanvas"></canvas>
+  <canvas id="annotationCanvas"></canvas>
+</div>
+
+<script>
+(function() {
+  // --- i18n (read-only, syncs with editor via localStorage) ---
+  const LANGS = {
+    it: { background: 'Sfondo', checker: 'Scacchiera', black: 'Nero', white: 'Bianco', gray: 'Grigio', paper: 'Carta', waiting: "In attesa di dati dall'editor..." },
+    en: { background: 'Background', checker: 'Checker', black: 'Black', white: 'White', gray: 'Gray', paper: 'Paper', waiting: 'Waiting for data from editor...' },
+    es: { background: 'Fondo', checker: 'Cuadros', black: 'Negro', white: 'Blanco', gray: 'Gris', paper: 'Papel', waiting: 'Esperando datos del editor...' },
+    fr: { background: 'Fond', checker: 'Damier', black: 'Noir', white: 'Blanc', gray: 'Gris', paper: 'Papier', waiting: "En attente de donn\u00e9es de l'\u00e9diteur..." },
+    de: { background: 'Hintergrund', checker: 'Schach', black: 'Schwarz', white: 'Wei\u00df', gray: 'Grau', paper: 'Papier', waiting: 'Warte auf Daten vom Editor...' },
+    pt: { background: 'Fundo', checker: 'Xadrez', black: 'Preto', white: 'Branco', gray: 'Cinza', paper: 'Papel', waiting: 'Aguardando dados do editor...' },
+    ru: { background: '\u0424\u043e\u043d', checker: '\u0428\u0430\u0445\u043c\u0430\u0442\u043d\u044b\u0439', black: '\u0427\u0451\u0440\u043d\u044b\u0439', white: '\u0411\u0435\u043b\u044b\u0439', gray: '\u0421\u0435\u0440\u044b\u0439', paper: '\u0411\u0443\u043c\u0430\u0433\u0430', waiting: '\u041e\u0436\u0438\u0434\u0430\u043d\u0438\u0435 \u0434\u0430\u043d\u043d\u044b\u0445 \u0438\u0437 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u0430...' },
+    ja: { background: '\u80cc\u666f', checker: '\u30c1\u30a7\u30c3\u30ab\u30fc', black: '\u9ed2', white: '\u767d', gray: '\u7070\u8272', paper: '\u7d19', waiting: '\u30a8\u30c7\u30a3\u30bf\u304b\u3089\u306e\u30c7\u30fc\u30bf\u3092\u5f85\u3063\u3066\u3044\u307e\u3059...' },
+    zh: { background: '\u80cc\u666f', checker: '\u68cb\u76d8', black: '\u9ed1\u8272', white: '\u767d\u8272', gray: '\u7070\u8272', paper: '\u7eb8', waiting: '\u7b49\u5f85\u7f16\u8f91\u5668\u6570\u636e...' },
+    ko: { background: '\ubc30\uacbd', checker: '\uccb4\ucee4', black: '\uac80\uc815', white: '\ud558\uc580', gray: '\ud68c\uc0c9', paper: '\uc885\uc774', waiting: '\uc5d0\ub514\ud130 \ub370\uc774\ud130 \ub300\uae30 \uc911...' },
+    ar: { background: '\u0627\u0644\u062e\u0644\u0641\u064a\u0629', checker: '\u0645\u0631\u0628\u0639\u0627\u062a', black: '\u0623\u0633\u0648\u062f', white: '\u0623\u0628\u064a\u0636', gray: '\u0631\u0645\u0627\u062f\u064a', paper: '\u0648\u0631\u0642', waiting: '\u0628\u0627\u0646\u062a\u0638\u0627\u0631 \u0628\u064a\u0627\u0646\u0627\u062a \u0645\u0646 \u0627\u0644\u0645\u062d\u0631\u0631...' },
+    hi: { background: '\u092a\u0943\u0937\u094d\u0920\u092d\u0942\u092e\u093f', checker: '\u091a\u0947\u0915\u0930', black: '\u0915\u093e\u0932\u093e', white: '\u0938\u092b\u0947\u0926', gray: '\u0938\u0932\u0947\u091f\u0940', paper: '\u0915\u093e\u0917\u091c', waiting: '\u0938\u0902\u092a\u093e\u0926\u0915 \u0938\u0947 \u0921\u0947\u091f\u093e \u0915\u0940 \u092a\u094d\u0930\u0924\u0940\u0915\u094d\u0937\u093e...' },
+    pl: { background: 'T\u0142o', checker: 'Szachownica', black: 'Czarny', white: 'Bia\u0142y', gray: 'Szary', paper: 'Papier', waiting: 'Oczekiwanie na dane z edytora...' },
+    nl: { background: 'Achtergrond', checker: 'Schaakbord', black: 'Zwart', white: 'Wit', gray: 'Grijs', paper: 'Papier', waiting: 'Wachten op gegevens van editor...' },
+    tr: { background: 'Arka plan', checker: 'Dama', black: 'Siyah', white: 'Beyaz', gray: 'Gri', paper: 'K\u00e2\u011f\u0131t', waiting: 'Edit\u00f6rden veri bekleniyor...' },
+    sv: { background: 'Bakgrund', checker: 'Rutig', black: 'Svart', white: 'Vit', gray: 'Gr\u00e5', paper: 'Papper', waiting: 'V\u00e4ntar p\u00e5 data fr\u00e5n redigeraren...' },
+  };
+
+  function applyLang(code) {
+    const t = LANGS[code] || LANGS.en;
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.dataset.i18n;
+      if (t[key]) el.textContent = t[key];
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const key = el.dataset.i18nTitle;
+      if (t[key]) el.title = t[key];
+    });
+    document.documentElement.lang = code;
+  }
+
+  function currentLang() {
+    try { return localStorage.getItem('mapeditor_lang') || 'en'; } catch(e) { return 'en'; }
+  }
+
+  applyLang(currentLang());
+
+  // Sync when editor changes the language (storage event fires in other windows)
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'mapeditor_lang') applyLang(e.newValue || 'en');
+  });
+
+  const container = document.getElementById('previewContainer');
+  const revealedCanvas = document.getElementById('revealedCanvas');
+  const annotationCanvas = document.getElementById('annotationCanvas');
+  const revealedCtx = revealedCanvas.getContext('2d');
+  const annotationCtx = annotationCanvas.getContext('2d');
+  const waiting = document.getElementById('waiting');
+
+  // --- Background switcher ---
+  const bgButtons = document.querySelectorAll('#bgBar button[data-bg]');
+  const BG_CLASSES = ['bg-checker', 'bg-black', 'bg-white', 'bg-gray', 'bg-paper'];
+  bgButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      BG_CLASSES.forEach(c => document.body.classList.remove(c));
+      document.body.classList.add('bg-' + btn.dataset.bg);
+      bgButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // --- Fit to viewport ---
+  let lastW = 0, lastH = 0;
+  function fitToViewport(w, h) {
+    lastW = w; lastH = h;
+    const fs = document.fullscreenElement || document.body.classList.contains('fs-active');
+    const maxW = fs ? window.innerWidth : window.innerWidth * 0.95;
+    const maxH = fs ? window.innerHeight : (window.innerHeight - 40) * 0.95;
+    const ratio = Math.min(maxW / w, maxH / h, fs ? Infinity : 1);
+    const displayW = Math.round(w * ratio);
+    const displayH = Math.round(h * ratio);
+    container.style.width = displayW + 'px';
+    container.style.height = displayH + 'px';
+    [revealedCanvas, annotationCanvas].forEach(c => {
+      c.style.width = displayW + 'px';
+      c.style.height = displayH + 'px';
+    });
+  }
+
+  // --- Fullscreen ---
+  const fsBtn = document.getElementById('fsBtn');
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+
+  fsBtn.addEventListener('click', toggleFullscreen);
+  container.addEventListener('dblclick', toggleFullscreen);
+
+  // Reveal bar when hovering top edge or bar itself
+  const bgBar = document.getElementById('bgBar');
+  const topHoverZone = document.getElementById('topHoverZone');
+  let hideTimer = null;
+  function showBar() {
+    clearTimeout(hideTimer);
+    document.body.classList.add('fs-reveal');
+  }
+  function scheduleHide() {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => document.body.classList.remove('fs-reveal'), 300);
+  }
+  topHoverZone.addEventListener('mouseenter', showBar);
+  topHoverZone.addEventListener('mouseleave', scheduleHide);
+  bgBar.addEventListener('mouseenter', showBar);
+  bgBar.addEventListener('mouseleave', scheduleHide);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      toggleFullscreen();
+    }
+  });
+
+  document.addEventListener('fullscreenchange', () => {
+    const active = !!document.fullscreenElement;
+    document.body.classList.toggle('fs-active', active);
+    fsBtn.innerHTML = active
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg>';
+    if (lastW && lastH) fitToViewport(lastW, lastH);
+  });
+
+  window.addEventListener('resize', () => {
+    if (lastW && lastH) fitToViewport(lastW, lastH);
+  });
+
+  // Brief reveal of the bar when entering fullscreen so the user knows it's there
+  let revealTimer = null;
+  document.addEventListener('fullscreenchange', () => {
+    if (document.fullscreenElement) {
+      document.body.classList.add('fs-reveal');
+      clearTimeout(revealTimer);
+      revealTimer = setTimeout(() => document.body.classList.remove('fs-reveal'), 1500);
+    }
+  });
+
+  // --- Receive data from editor ---
+  window.addEventListener('message', (e) => {
+    if (!e.data || e.data.type !== 'mapUpdate') return;
+
+    const { revealed, annotations, width, height } = e.data;
+
+    revealedCanvas.width = width;
+    revealedCanvas.height = height;
+    annotationCanvas.width = width;
+    annotationCanvas.height = height;
+
+    fitToViewport(width, height);
+
+    const img1 = new Image();
+    img1.onload = () => {
+      revealedCtx.clearRect(0, 0, width, height);
+      revealedCtx.drawImage(img1, 0, 0);
+    };
+    img1.src = revealed;
+
+    const img2 = new Image();
+    img2.onload = () => {
+      annotationCtx.clearRect(0, 0, width, height);
+      annotationCtx.drawImage(img2, 0, 0);
+    };
+    img2.src = annotations;
+
+    waiting.style.display = 'none';
+  });
+})();
+</script>
+</body>
+</html>

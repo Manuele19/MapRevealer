@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Map Editor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', Tahoma, sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+
+  #toolbar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    background: #16213e; border-bottom: 2px solid #0f3460; z-index: 10;
+    flex-shrink: 0; flex-wrap: wrap;
+  }
+  #toolbar button, #toolbar label {
+    padding: 6px 14px; border: 2px solid transparent; border-radius: 6px;
+    background: #0f3460; color: #eee; cursor: pointer; font-size: 14px;
+    transition: all .15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  #toolbar button svg { width: 18px; height: 18px; flex-shrink: 0; }
+  #toolbar button:hover { background: #1a4a7a; }
+  #toolbar button.active { border-color: #e94560; background: #1a4a7a; }
+  #toolbar button[data-tool="green"].active { border-color: #00c853; }
+  #toolbar button[data-tool="red"].active { border-color: #ff1744; }
+  #toolbar button[data-tool="pen"].active { border-color: #fff; }
+  #toolbar button[data-tool="eraser"].active { border-color: #ffab40; }
+
+  #undoBtn, #redoBtn { font-size: 18px; line-height: 1; }
+  #undoBtn:disabled, #redoBtn:disabled { opacity: 0.3; cursor: default; }
+
+  #penColor {
+    width: 34px; height: 34px; padding: 1px; border: 2px solid #0f3460;
+    border-radius: 6px; background: #0f3460; cursor: pointer;
+  }
+  #penColor:hover { border-color: #1a4a7a; }
+
+  #sendBtn { background: #e94560 !important; font-weight: bold; }
+  #sendBtn:hover { background: #ff6b81 !important; }
+
+  #fileInput { color: #aaa; font-size: 13px; max-width: 220px; }
+
+  #langSelect {
+    padding: 4px 6px; border-radius: 6px; border: 2px solid #0f3460;
+    background: #0f3460; color: #eee; font-size: 13px; cursor: pointer;
+    margin-left: auto;
+  }
+  #langSelect:hover { background: #1a4a7a; }
+
+  .brush-control { display: flex; align-items: center; gap: 6px; color: #aaa; font-size: 14px; }
+  .brush-control input[type="range"] {
+    width: 160px; height: 8px; cursor: pointer;
+    accent-color: #e94560;
+  }
+
+  #viewport {
+    flex: 1; position: relative; overflow: hidden; cursor: default;
+  }
+  #canvasContainer {
+    position: absolute; top: 0; left: 0; transform-origin: 0 0;
+  }
+  #canvasContainer canvas {
+    position: absolute; top: 0; left: 0; display: block;
+  }
+
+  #placeholder {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 22px; color: #555;
+    pointer-events: none;
+  }
+
+  #brushCursor {
+    position: fixed; border: 2px solid rgba(255,255,255,0.6);
+    border-radius: 50%; pointer-events: none; z-index: 100;
+    display: none; transform: translate(-50%, -50%);
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <input type="file" id="fileInput" accept="image/*">
+  <button data-tool="cursor" class="active" title="V / 1"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 2l15 8-7 2-2 7L4 2z"/></svg><span data-i18n="cursor">Cursore</span></button>
+  <button data-tool="green" title="S / 2"><svg viewBox="0 0 24 24" fill="none" stroke="#00c853" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 10 18 20 6"/></svg><span data-i18n="green">Seleziona</span></button>
+  <button data-tool="red" title="D / 3"><svg viewBox="0 0 24 24" fill="none" stroke="#ff1744" stroke-width="3" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg><span data-i18n="red">Deseleziona</span></button>
+  <button data-tool="pen" title="P / 4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l3-1 12-12-2-2L4 18l-1 3z"/><path d="M14 6l2 2"/></svg><span data-i18n="pen">Penna</span></button>
+  <button data-tool="eraser" title="E / 5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l9-9 5 5-9 9H5l-2-2z"/><line x1="9" y1="21" x2="21" y2="21"/></svg><span data-i18n="eraser">Gomma</span></button>
+  <button id="undoBtn" title="Ctrl+Z"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11a6 6 0 0 1 0 12h-3"/><polyline points="7 6 3 10 7 14"/></svg></button>
+  <button id="redoBtn" title="Ctrl+Y / Ctrl+Shift+Z"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10H10a6 6 0 0 0 0 12h3"/><polyline points="17 6 21 10 17 14"/></svg></button>
+  <input type="color" id="penColor" value="#000000" title="Colore annotazioni">
+  <div class="brush-control">
+    <label><span data-i18n="size">Dimensione</span>: <input type="range" id="brushSize" min="0" max="1000" value="400"></label>
+    <span id="brushSizeLabel">25</span>
+  </div>
+  <button id="sendBtn" title="Ctrl+S"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg><span data-i18n="send">Invia</span></button>
+  <select id="langSelect"></select>
+</div>
+
+<div id="viewport">
+  <div id="placeholder" data-i18n="placeholder">Carica un'immagine per iniziare</div>
+  <div id="canvasContainer">
+    <canvas id="imageCanvas"></canvas>
+    <canvas id="maskCanvas"></canvas>
+    <canvas id="annotationCanvas"></canvas>
+  </div>
+  <div id="brushCursor"></div>
+</div>
+
+<script>
+(function() {
+  // --- i18n ---
+  const LANGS = {
+    it: { name: 'Italiano', cursor: 'Cursore', green: 'Seleziona', red: 'Deseleziona', pen: 'Penna', eraser: 'Gomma', size: 'Dimensione', send: 'Invia', placeholder: "Carica un'immagine per iniziare" },
+    en: { name: 'English', cursor: 'Cursor', green: 'Select', red: 'Deselect', pen: 'Pen', eraser: 'Eraser', size: 'Size', send: 'Send', placeholder: 'Load an image to start' },
+    es: { name: 'Espa\u00f1ol', cursor: 'Cursor', green: 'Seleccionar', red: 'Deseleccionar', pen: 'L\u00e1piz', eraser: 'Borrador', size: 'Tama\u00f1o', send: 'Enviar', placeholder: 'Carga una imagen para empezar' },
+    fr: { name: 'Fran\u00e7ais', cursor: 'Curseur', green: 'S\u00e9lectionner', red: 'D\u00e9s\u00e9lectionner', pen: 'Stylo', eraser: 'Gomme', size: 'Taille', send: 'Envoyer', placeholder: 'Chargez une image pour commencer' },
+    de: { name: 'Deutsch', cursor: 'Zeiger', green: 'Ausw\u00e4hlen', red: 'Abw\u00e4hlen', pen: 'Stift', eraser: 'Radierer', size: 'Gr\u00f6\u00dfe', send: 'Senden', placeholder: 'Bild laden, um zu starten' },
+    pt: { name: 'Portugu\u00eas', cursor: 'Cursor', green: 'Selecionar', red: 'Desselecionar', pen: 'Caneta', eraser: 'Borracha', size: 'Tamanho', send: 'Enviar', placeholder: 'Carregue uma imagem para come\u00e7ar' },
+    ru: { name: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439', cursor: '\u041a\u0443\u0440\u0441\u043e\u0440', green: '\u0412\u044b\u0434\u0435\u043b\u0438\u0442\u044c', red: '\u0421\u043d\u044f\u0442\u044c', pen: '\u041f\u0435\u0440\u043e', eraser: '\u041b\u0430\u0441\u0442\u0438\u043a', size: '\u0420\u0430\u0437\u043c\u0435\u0440', send: '\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c', placeholder: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435' },
+    ja: { name: '\u65e5\u672c\u8a9e', cursor: '\u30ab\u30fc\u30bd\u30eb', green: '\u9078\u629e', red: '\u9078\u629e\u89e3\u9664', pen: '\u30da\u30f3', eraser: '\u6d88\u3057\u30b4\u30e0', size: '\u30b5\u30a4\u30ba', send: '\u9001\u4fe1', placeholder: '\u753b\u50cf\u3092\u8aad\u307f\u8fbc\u3093\u3067\u304f\u3060\u3055\u3044' },
+    zh: { name: '\u4e2d\u6587', cursor: '\u5149\u6807', green: '\u9009\u62e9', red: '\u53d6\u6d88\u9009\u62e9', pen: '\u94a2\u7b14', eraser: '\u6a61\u76ae\u64e6', size: '\u5927\u5c0f', send: '\u53d1\u9001', placeholder: '\u52a0\u8f7d\u56fe\u7247\u5f00\u59cb' },
+    ko: { name: '\ud55c\uad6d\uc5b4', cursor: '\ucee4\uc11c', green: '\uc120\ud0dd', red: '\uc120\ud0dd \ud574\uc81c', pen: '\ud3b8', eraser: '\uc9c0\uc6b0\uac1c', size: '\ud06c\uae30', send: '\ubcf4\ub0b4\uae30', placeholder: '\uc774\ubbf8\uc9c0\ub97c \ub85c\ub4dc\ud558\uc138\uc694' },
+    ar: { name: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', cursor: '\u0627\u0644\u0645\u0624\u0634\u0631', green: '\u062a\u062d\u062f\u064a\u062f', red: '\u0625\u0644\u063a\u0627\u0621 \u0627\u0644\u062a\u062d\u062f\u064a\u062f', pen: '\u0642\u0644\u0645', eraser: '\u0645\u0645\u062d\u0627\u0629', size: '\u0627\u0644\u062d\u062c\u0645', send: '\u0625\u0631\u0633\u0627\u0644', placeholder: '\u062d\u0645\u0651\u0644 \u0635\u0648\u0631\u0629 \u0644\u0644\u0628\u062f\u0621' },
+    hi: { name: '\u0939\u093f\u0928\u094d\u0926\u0940', cursor: '\u0915\u0930\u094d\u0938\u0930', green: '\u091a\u0941\u0928\u0947\u0902', red: '\u0905\u091a\u092f\u0928\u093f\u0924', pen: '\u092a\u0947\u0928', eraser: '\u0930\u092c\u0930', size: '\u0906\u0915\u093e\u0930', send: '\u092d\u0947\u091c\u0947\u0902', placeholder: '\u0936\u0941\u0930\u0942 \u0915\u0930\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u091b\u0935\u093f \u0932\u094b\u0921 \u0915\u0930\u0947\u0902' },
+    pl: { name: 'Polski', cursor: 'Kursor', green: 'Zaznacz', red: 'Odznacz', pen: 'Pi\u00f3ro', eraser: 'Gumka', size: 'Rozmiar', send: 'Wy\u015blij', placeholder: 'Za\u0142aduj obraz, aby zacz\u0105\u0107' },
+    nl: { name: 'Nederlands', cursor: 'Cursor', green: 'Selecteren', red: 'Deselecteren', pen: 'Pen', eraser: 'Gum', size: 'Grootte', send: 'Verzenden', placeholder: 'Laad een afbeelding om te beginnen' },
+    tr: { name: 'T\u00fcrk\u00e7e', cursor: '\u0130mle\u00e7', green: 'Se\u00e7', red: 'Se\u00e7imi kald\u0131r', pen: 'Kalem', eraser: 'Silgi', size: 'Boyut', send: 'G\u00f6nder', placeholder: 'Ba\u015flamak i\u00e7in bir g\u00f6rsel y\u00fckleyin' },
+    sv: { name: 'Svenska', cursor: 'Mark\u00f6r', green: 'Markera', red: 'Avmarkera', pen: 'Penna', eraser: 'Sudd', size: 'Storlek', send: 'Skicka', placeholder: 'Ladda en bild f\u00f6r att b\u00f6rja' },
+  };
+
+  const langSelect = document.getElementById('langSelect');
+  Object.keys(LANGS).forEach(code => {
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = LANGS[code].name;
+    langSelect.appendChild(opt);
+  });
+
+  function applyLang(code) {
+    const t = LANGS[code];
+    if (!t) return;
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.dataset.i18n;
+      if (t[key]) el.textContent = t[key];
+    });
+    document.documentElement.lang = code;
+    try { localStorage.setItem('mapeditor_lang', code); } catch(e) {}
+  }
+
+  const savedLang = (() => { try { return localStorage.getItem('mapeditor_lang'); } catch(e) { return null; } })();
+  langSelect.value = savedLang && LANGS[savedLang] ? savedLang : 'it';
+  applyLang(langSelect.value);
+
+  langSelect.addEventListener('change', () => applyLang(langSelect.value));
+
+  // Elements
+  const fileInput = document.getElementById('fileInput');
+  const viewport = document.getElementById('viewport');
+  const container = document.getElementById('canvasContainer');
+  const placeholder = document.getElementById('placeholder');
+  const brushCursorEl = document.getElementById('brushCursor');
+  const brushSizeInput = document.getElementById('brushSize');
+  const brushSizeLabel = document.getElementById('brushSizeLabel');
+  const sendBtn = document.getElementById('sendBtn');
+  const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
+  const penColor = document.getElementById('penColor');
+
+  const imageCanvas = document.getElementById('imageCanvas');
+  const maskCanvas = document.getElementById('maskCanvas');
+  const annotationCanvas = document.getElementById('annotationCanvas');
+
+  const imageCtx = imageCanvas.getContext('2d');
+  const maskCtx = maskCanvas.getContext('2d');
+  const annotationCtx = annotationCanvas.getContext('2d');
+
+  // State
+  let currentTool = 'cursor';
+  let scale = 1, panX = 0, panY = 0;
+  let isDown = false;
+  let lastX = 0, lastY = 0;
+  let brushRadius = 25;
+  let previewWindow = null;
+  let loadedImage = null;
+  let maskData = null; // Uint8Array: 0=red, 1=green
+  let imgWidth = 0, imgHeight = 0;
+
+  // --- Annotation undo/redo ---
+  let annotationHistory = [];
+  let annotationRedoStack = [];
+  const MAX_HISTORY = 50;
+
+  function saveAnnotationState() {
+    if (!imgWidth || !imgHeight) return;
+    annotationHistory.push(annotationCtx.getImageData(0, 0, imgWidth, imgHeight));
+    if (annotationHistory.length > MAX_HISTORY) annotationHistory.shift();
+    annotationRedoStack = [];
+    updateUndoRedoButtons();
+  }
+
+  function undoAnnotation() {
+    if (annotationHistory.length === 0) return;
+    annotationRedoStack.push(annotationCtx.getImageData(0, 0, imgWidth, imgHeight));
+    const prev = annotationHistory.pop();
+    annotationCtx.putImageData(prev, 0, 0);
+    updateUndoRedoButtons();
+  }
+
+  function redoAnnotation() {
+    if (annotationRedoStack.length === 0) return;
+    annotationHistory.push(annotationCtx.getImageData(0, 0, imgWidth, imgHeight));
+    const next = annotationRedoStack.pop();
+    annotationCtx.putImageData(next, 0, 0);
+    updateUndoRedoButtons();
+  }
+
+  function updateUndoRedoButtons() {
+    undoBtn.disabled = annotationHistory.length === 0;
+    redoBtn.disabled = annotationRedoStack.length === 0;
+  }
+
+  undoBtn.addEventListener('click', undoAnnotation);
+  redoBtn.addEventListener('click', redoAnnotation);
+  updateUndoRedoButtons();
+
+  // --- Tool selection ---
+  const toolButtons = document.querySelectorAll('#toolbar button[data-tool]');
+  toolButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentTool = btn.dataset.tool;
+      toolButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      updateCursorStyle();
+    });
+  });
+
+  function updateCursorStyle() {
+    if (currentTool === 'cursor') {
+      viewport.style.cursor = 'grab';
+      brushCursorEl.style.display = 'none';
+    } else {
+      viewport.style.cursor = 'none';
+    }
+  }
+
+  // --- Brush size (exponential slider) ---
+  const BRUSH_MIN = 3;
+  const BRUSH_MAX = 600;
+  const SLIDER_MAX = 1000;
+  const BRUSH_RATIO = BRUSH_MAX / BRUSH_MIN;
+
+  function sliderToBrush(pos) {
+    return Math.max(BRUSH_MIN, Math.min(BRUSH_MAX,
+      Math.round(BRUSH_MIN * Math.pow(BRUSH_RATIO, pos / SLIDER_MAX))
+    ));
+  }
+
+  // On-image diameter for the current tool's mark
+  function effectiveDiameter() {
+    if (currentTool === 'pen') return Math.max(2, brushRadius / 4);
+    if (currentTool === 'eraser') return brushRadius;
+    return brushRadius * 2; // green/red brush (radius -> diameter)
+  }
+
+  function syncBrushFromSlider() {
+    brushRadius = sliderToBrush(parseInt(brushSizeInput.value));
+    brushSizeLabel.textContent = brushRadius;
+  }
+
+  brushSizeInput.addEventListener('input', syncBrushFromSlider);
+  syncBrushFromSlider();
+
+  // Scroll wheel over slider to adjust brush size (slider position step)
+  brushSizeInput.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    adjustBrush(e.deltaY < 0 ? 25 : -25);
+  }, { passive: false });
+
+  // --- File loading ---
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        loadedImage = img;
+        initCanvases(img);
+        placeholder.style.display = 'none';
+
+        // Open preview window with unique name
+        const previewName = 'preview_' + Date.now();
+        previewWindow = window.open('preview.html', previewName);
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  function initCanvases(img) {
+    imgWidth = img.naturalWidth;
+    imgHeight = img.naturalHeight;
+
+    // Size all canvases
+    [imageCanvas, maskCanvas, annotationCanvas].forEach(c => {
+      c.width = imgWidth;
+      c.height = imgHeight;
+    });
+
+    // Draw image
+    imageCtx.drawImage(img, 0, 0);
+
+    // Init mask data (all red = 0)
+    maskData = new Uint8Array(imgWidth * imgHeight);
+    renderFullMask();
+
+    // Clear annotations and reset undo history
+    annotationCtx.clearRect(0, 0, imgWidth, imgHeight);
+    annotationHistory = [];
+    annotationRedoStack = [];
+    updateUndoRedoButtons();
+
+    // Fit to viewport
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    scale = Math.min(vw / imgWidth, vh / imgHeight) * 0.95;
+    panX = (vw - imgWidth * scale) / 2;
+    panY = (vh - imgHeight * scale) / 2;
+    applyTransform();
+  }
+
+  function renderFullMask() {
+    const imgData = maskCtx.createImageData(imgWidth, imgHeight);
+    const d = imgData.data;
+    for (let i = 0; i < maskData.length; i++) {
+      const idx = i * 4;
+      if (maskData[i] === 1) {
+        d[idx] = 0; d[idx+1] = 200; d[idx+2] = 0; d[idx+3] = 70;
+      } else {
+        d[idx] = 200; d[idx+1] = 0; d[idx+2] = 0; d[idx+3] = 90;
+      }
+    }
+    maskCtx.putImageData(imgData, 0, 0);
+  }
+
+  function renderMaskRegion(x1, y1, x2, y2) {
+    x1 = Math.max(0, Math.floor(x1));
+    y1 = Math.max(0, Math.floor(y1));
+    x2 = Math.min(imgWidth, Math.ceil(x2));
+    y2 = Math.min(imgHeight, Math.ceil(y2));
+    const rw = x2 - x1;
+    const rh = y2 - y1;
+    if (rw <= 0 || rh <= 0) return;
+
+    const imgData = maskCtx.createImageData(rw, rh);
+    const d = imgData.data;
+    for (let py = 0; py < rh; py++) {
+      for (let px = 0; px < rw; px++) {
+        const mi = (y1 + py) * imgWidth + (x1 + px);
+        const idx = (py * rw + px) * 4;
+        if (maskData[mi] === 1) {
+          d[idx] = 0; d[idx+1] = 200; d[idx+2] = 0; d[idx+3] = 70;
+        } else {
+          d[idx] = 200; d[idx+1] = 0; d[idx+2] = 0; d[idx+3] = 90;
+        }
+      }
+    }
+    maskCtx.putImageData(imgData, x1, y1);
+  }
+
+  // --- Transform ---
+  function applyTransform() {
+    container.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  }
+
+  // --- Coordinate conversion ---
+  function screenToCanvas(e) {
+    const rect = viewport.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left - panX) / scale,
+      y: (e.clientY - rect.top - panY) / scale
+    };
+  }
+
+  // --- Brush stamp on mask ---
+  function stampBrush(cx, cy, value) {
+    const r = brushRadius;
+    const x1 = Math.floor(cx - r);
+    const y1 = Math.floor(cy - r);
+    const x2 = Math.ceil(cx + r);
+    const y2 = Math.ceil(cy + r);
+    const r2 = r * r;
+
+    for (let py = Math.max(0, y1); py < Math.min(imgHeight, y2); py++) {
+      for (let px = Math.max(0, x1); px < Math.min(imgWidth, x2); px++) {
+        const dx = px - cx;
+        const dy = py - cy;
+        if (dx * dx + dy * dy <= r2) {
+          maskData[py * imgWidth + px] = value;
+        }
+      }
+    }
+    return { x1, y1, x2, y2 };
+  }
+
+  function stampLine(fromX, fromY, toX, toY, value) {
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const step = Math.max(1, brushRadius * 0.3);
+    const steps = Math.max(1, Math.ceil(dist / step));
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const cx = fromX + dx * t;
+      const cy = fromY + dy * t;
+      const b = stampBrush(cx, cy, value);
+      minX = Math.min(minX, b.x1);
+      minY = Math.min(minY, b.y1);
+      maxX = Math.max(maxX, b.x2);
+      maxY = Math.max(maxY, b.y2);
+    }
+    renderMaskRegion(minX, minY, maxX, maxY);
+  }
+
+  // --- Pointer events ---
+  viewport.addEventListener('pointerdown', (e) => {
+    if (!loadedImage) return;
+    isDown = true;
+    const pos = screenToCanvas(e);
+    lastX = pos.x;
+    lastY = pos.y;
+
+    if (currentTool === 'cursor') {
+      viewport.style.cursor = 'grabbing';
+      lastX = e.clientX;
+      lastY = e.clientY;
+    } else if (currentTool === 'green') {
+      stampLine(pos.x, pos.y, pos.x, pos.y, 1);
+    } else if (currentTool === 'red') {
+      stampLine(pos.x, pos.y, pos.x, pos.y, 0);
+    } else if (currentTool === 'pen') {
+      saveAnnotationState();
+      annotationCtx.globalCompositeOperation = 'source-over';
+      annotationCtx.beginPath();
+      annotationCtx.moveTo(pos.x, pos.y);
+      annotationCtx.strokeStyle = penColor.value;
+      annotationCtx.lineWidth = Math.max(2, brushRadius / 4);
+      annotationCtx.lineCap = 'round';
+      annotationCtx.lineJoin = 'round';
+    } else if (currentTool === 'eraser') {
+      saveAnnotationState();
+      annotationCtx.globalCompositeOperation = 'destination-out';
+      annotationCtx.beginPath();
+      annotationCtx.moveTo(pos.x, pos.y);
+      annotationCtx.strokeStyle = 'rgba(0,0,0,1)';
+      annotationCtx.lineWidth = brushRadius;
+      annotationCtx.lineCap = 'round';
+      annotationCtx.lineJoin = 'round';
+    }
+
+    viewport.setPointerCapture(e.pointerId);
+  });
+
+  viewport.addEventListener('pointermove', (e) => {
+    const pos = screenToCanvas(e);
+
+    // Brush cursor
+    if (currentTool !== 'cursor' && loadedImage) {
+      brushCursorEl.style.display = 'block';
+      brushCursorEl.style.left = e.clientX + 'px';
+      brushCursorEl.style.top = e.clientY + 'px';
+      const diameter = effectiveDiameter() * scale;
+      brushCursorEl.style.width = diameter + 'px';
+      brushCursorEl.style.height = diameter + 'px';
+
+      if (currentTool === 'green') {
+        brushCursorEl.style.borderColor = 'rgba(0,200,0,0.8)';
+      } else if (currentTool === 'red') {
+        brushCursorEl.style.borderColor = 'rgba(200,0,0,0.8)';
+      } else if (currentTool === 'eraser') {
+        brushCursorEl.style.borderColor = 'rgba(255,171,64,0.8)';
+      } else {
+        brushCursorEl.style.borderColor = 'rgba(255,255,255,0.6)';
+      }
+    }
+
+    if (!isDown || !loadedImage) return;
+
+    if (currentTool === 'cursor') {
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      panX += dx;
+      panY += dy;
+      applyTransform();
+      lastX = e.clientX;
+      lastY = e.clientY;
+    } else if (currentTool === 'green') {
+      stampLine(lastX, lastY, pos.x, pos.y, 1);
+      lastX = pos.x;
+      lastY = pos.y;
+    } else if (currentTool === 'red') {
+      stampLine(lastX, lastY, pos.x, pos.y, 0);
+      lastX = pos.x;
+      lastY = pos.y;
+    } else if (currentTool === 'pen' || currentTool === 'eraser') {
+      annotationCtx.lineTo(pos.x, pos.y);
+      annotationCtx.stroke();
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+  });
+
+  viewport.addEventListener('pointerup', () => {
+    if (isDown && (currentTool === 'pen' || currentTool === 'eraser')) {
+      annotationCtx.globalCompositeOperation = 'source-over';
+    }
+    isDown = false;
+    if (currentTool === 'cursor') {
+      viewport.style.cursor = 'grab';
+    }
+  });
+
+  // --- Wheel: brush size for brush tools, zoom with Ctrl (or always on cursor tool) ---
+  const BRUSH_TOOLS = new Set(['green', 'red', 'pen', 'eraser']);
+
+  viewport.addEventListener('wheel', (e) => {
+    if (!loadedImage) return;
+    e.preventDefault();
+
+    const isBrushTool = BRUSH_TOOLS.has(currentTool);
+
+    if (isBrushTool && !e.ctrlKey && !e.metaKey) {
+      // Adjust brush size
+      const step = e.deltaY < 0 ? 25 : -25;
+      adjustBrush(step);
+      // Update brush cursor diameter immediately
+      const diameter = effectiveDiameter() * scale;
+      brushCursorEl.style.width = diameter + 'px';
+      brushCursorEl.style.height = diameter + 'px';
+      return;
+    }
+
+    // Zoom
+    const oldScale = scale;
+    const factor = e.deltaY < 0 ? 1.1 : 0.9;
+    scale = Math.min(10, Math.max(0.05, scale * factor));
+
+    const rect = viewport.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    panX = mx - (mx - panX) * (scale / oldScale);
+    panY = my - (my - panY) * (scale / oldScale);
+
+    applyTransform();
+  }, { passive: false });
+
+  // --- Send to preview ---
+  sendBtn.addEventListener('click', () => {
+    if (!loadedImage || !maskData) return;
+
+    if (!previewWindow || previewWindow.closed) {
+      const previewName = 'preview_' + Date.now();
+      previewWindow = window.open('preview.html', previewName);
+    }
+
+    // Build revealed image: original image with non-green pixels transparent
+    const offscreen = document.createElement('canvas');
+    offscreen.width = imgWidth;
+    offscreen.height = imgHeight;
+    const offCtx = offscreen.getContext('2d');
+    offCtx.drawImage(imageCanvas, 0, 0);
+
+    const imgPixels = offCtx.getImageData(0, 0, imgWidth, imgHeight);
+    const d = imgPixels.data;
+    for (let i = 0; i < maskData.length; i++) {
+      if (maskData[i] === 0) {
+        d[i * 4 + 3] = 0; // alpha = 0 for red areas
+      }
+    }
+    offCtx.putImageData(imgPixels, 0, 0);
+
+    const revealedDataURL = offscreen.toDataURL('image/png');
+    const annotationDataURL = annotationCanvas.toDataURL('image/png');
+
+    const msg = {
+      type: 'mapUpdate',
+      revealed: revealedDataURL,
+      annotations: annotationDataURL,
+      width: imgWidth,
+      height: imgHeight
+    };
+
+    // Small delay to ensure preview window is loaded if just opened
+    setTimeout(() => {
+      previewWindow.postMessage(msg, '*');
+    }, 500);
+  });
+
+  // --- Keyboard shortcuts ---
+  let toolBeforeSpace = null;
+
+  function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  }
+
+  function adjustBrush(sliderDelta) {
+    const cur = parseInt(brushSizeInput.value);
+    const next = Math.min(SLIDER_MAX, Math.max(0, cur + sliderDelta));
+    brushSizeInput.value = next;
+    syncBrushFromSlider();
+  }
+
+  document.addEventListener('keydown', (e) => {
+    // Ctrl/Cmd shortcuts first
+    if (e.ctrlKey || e.metaKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'z' && e.shiftKey) { e.preventDefault(); redoAnnotation(); return; }
+      if (k === 'z') { e.preventDefault(); undoAnnotation(); return; }
+      if (k === 'y') { e.preventDefault(); redoAnnotation(); return; }
+      if (k === 's') { e.preventDefault(); sendBtn.click(); return; }
+      if (k === 'o') { e.preventDefault(); fileInput.click(); return; }
+      return;
+    }
+
+    // Ignore when typing in inputs/selects
+    if (isTypingTarget(e.target)) return;
+
+    // Space held = temporary pan/cursor
+    if (e.code === 'Space' && !e.repeat) {
+      e.preventDefault();
+      if (currentTool !== 'cursor') {
+        toolBeforeSpace = currentTool;
+        selectTool('cursor');
+      }
+      return;
+    }
+
+    // Escape = back to cursor
+    if (e.key === 'Escape') { selectTool('cursor'); return; }
+
+    // Brush size
+    if (e.key === '[') { adjustBrush(-25); return; }
+    if (e.key === ']') { adjustBrush(25); return; }
+
+    // Numbers
+    if (e.key === '1') selectTool('cursor');
+    else if (e.key === '2') selectTool('green');
+    else if (e.key === '3') selectTool('red');
+    else if (e.key === '4') selectTool('pen');
+    else if (e.key === '5') selectTool('eraser');
+    // Letters (mnemonic, Photoshop-style)
+    else {
+      const k = e.key.toLowerCase();
+      if (k === 'v') selectTool('cursor');
+      else if (k === 's') selectTool('green');
+      else if (k === 'd') selectTool('red');
+      else if (k === 'p') selectTool('pen');
+      else if (k === 'e') selectTool('eraser');
+    }
+  });
+
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' && toolBeforeSpace) {
+      selectTool(toolBeforeSpace);
+      toolBeforeSpace = null;
+    }
+  });
+
+  function selectTool(tool) {
+    currentTool = tool;
+    toolButtons.forEach(b => {
+      b.classList.toggle('active', b.dataset.tool === tool);
+    });
+    updateCursorStyle();
+  }
+
+  // Hide brush cursor when leaving viewport
+  viewport.addEventListener('pointerleave', () => {
+    brushCursorEl.style.display = 'none';
+  });
+
+  updateCursorStyle();
+})();
+</script>
+</body>
+</html>
