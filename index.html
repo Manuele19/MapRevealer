@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="eng">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -26,6 +26,7 @@
   #toolbar button[data-tool="red"].active { border-color: #ff1744; }
   #toolbar button[data-tool="pen"].active { border-color: #fff; }
   #toolbar button[data-tool="eraser"].active { border-color: #ffab40; }
+  #toolbar button[data-tool="rect"].active { border-color: #00b0ff; }
 
   #undoBtn, #redoBtn { font-size: 18px; line-height: 1; }
   #undoBtn:disabled, #redoBtn:disabled { opacity: 0.3; cursor: default; }
@@ -39,14 +40,36 @@
   #sendBtn { background: #e94560 !important; font-weight: bold; }
   #sendBtn:hover { background: #ff6b81 !important; }
 
-  #fileInput { color: #aaa; font-size: 13px; max-width: 220px; }
+  #autoSyncBtn.active { border-color: #00c853; background: #1a4a7a; }
+  #autoSyncBtn.active::after {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: #00c853; box-shadow: 0 0 6px #00c853;
+    animation: autoSyncPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes autoSyncPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  #fileInput { display: none; }
+  #fileName {
+    color: #aaa; font-size: 13px; max-width: 200px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #fileName:empty { display: none; }
 
   #langSelect {
     padding: 4px 6px; border-radius: 6px; border: 2px solid #0f3460;
     background: #0f3460; color: #eee; font-size: 13px; cursor: pointer;
-    margin-left: auto;
   }
   #langSelect:hover { background: #1a4a7a; }
+
+  .toolbar-group { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .toolbar-group.output { margin-left: auto; }
+  .toolbar-sep {
+    width: 1px; align-self: stretch;
+    background: #0f3460; opacity: 0.7;
+  }
 
   .brush-control { display: flex; align-items: center; gap: 6px; color: #aaa; font-size: 14px; }
   .brush-control input[type="range"] {
@@ -56,6 +79,11 @@
 
   #viewport {
     flex: 1; position: relative; overflow: hidden; cursor: default;
+  }
+  #viewport.drag-over::after {
+    content: ''; position: absolute; inset: 12px;
+    border: 3px dashed #e94560; border-radius: 12px;
+    pointer-events: none; z-index: 150;
   }
   #canvasContainer {
     position: absolute; top: 0; left: 0; transform-origin: 0 0;
@@ -67,7 +95,7 @@
   #placeholder {
     position: absolute; inset: 0; display: flex; align-items: center;
     justify-content: center; font-size: 22px; color: #555;
-    pointer-events: none;
+    pointer-events: none; text-align: center; padding: 20px;
   }
 
   #brushCursor {
@@ -75,58 +103,151 @@
     border-radius: 50%; pointer-events: none; z-index: 100;
     display: none; transform: translate(-50%, -50%);
   }
+
+  #rectPreview {
+    position: absolute; pointer-events: none; z-index: 90;
+    border: 2px dashed rgba(0,200,0,0.95);
+    background: rgba(0,200,0,0.18);
+    display: none;
+  }
+  #rectPreview.deselect {
+    border-color: rgba(255,23,68,0.95);
+    background: rgba(255,23,68,0.18);
+  }
+
+  #toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(0,200,83,0.95); color: #fff;
+    padding: 10px 22px; border-radius: 8px; font-size: 14px;
+    pointer-events: none; opacity: 0;
+    transition: opacity .18s, transform .18s;
+    z-index: 200; box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #resizeDialog {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+    display: none; align-items: center; justify-content: center;
+    z-index: 300;
+  }
+  #resizeDialog.show { display: flex; }
+  #resizeBox {
+    background: #16213e; border: 2px solid #0f3460; border-radius: 10px;
+    padding: 22px 26px; max-width: 480px; min-width: 300px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  }
+  #resizeBox h3 { color: #eee; margin-bottom: 10px; font-size: 18px; }
+  #resizeBox p { color: #bbb; margin-bottom: 18px; line-height: 1.5; font-size: 14px; }
+  #resizeBox .dims { color: #eee; font-family: monospace; }
+  #resizeBox .buttons { display: flex; gap: 10px; justify-content: flex-end; }
+  #resizeBox button {
+    padding: 8px 18px; border: 2px solid #0f3460; border-radius: 6px;
+    background: #0f3460; color: #eee; cursor: pointer; font-size: 14px;
+    transition: all .15s;
+  }
+  #resizeBox button:hover { background: #1a4a7a; }
+  #rdAccept { background: #e94560; border-color: #e94560; font-weight: bold; }
+  #rdAccept:hover { background: #ff6b81; border-color: #ff6b81; }
 </style>
 </head>
 <body>
 
 <div id="toolbar">
-  <input type="file" id="fileInput" accept="image/*">
-  <button data-tool="cursor" class="active" title="V / 1"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 2l15 8-7 2-2 7L4 2z"/></svg><span data-i18n="cursor">Cursore</span></button>
-  <button data-tool="green" title="S / 2"><svg viewBox="0 0 24 24" fill="none" stroke="#00c853" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 10 18 20 6"/></svg><span data-i18n="green">Seleziona</span></button>
-  <button data-tool="red" title="D / 3"><svg viewBox="0 0 24 24" fill="none" stroke="#ff1744" stroke-width="3" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg><span data-i18n="red">Deseleziona</span></button>
-  <button data-tool="pen" title="P / 4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l3-1 12-12-2-2L4 18l-1 3z"/><path d="M14 6l2 2"/></svg><span data-i18n="pen">Penna</span></button>
-  <button data-tool="eraser" title="E / 5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l9-9 5 5-9 9H5l-2-2z"/><line x1="9" y1="21" x2="21" y2="21"/></svg><span data-i18n="eraser">Gomma</span></button>
-  <button id="undoBtn" title="Ctrl+Z"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11a6 6 0 0 1 0 12h-3"/><polyline points="7 6 3 10 7 14"/></svg></button>
-  <button id="redoBtn" title="Ctrl+Y / Ctrl+Shift+Z"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10H10a6 6 0 0 0 0 12h3"/><polyline points="17 6 21 10 17 14"/></svg></button>
-  <input type="color" id="penColor" value="#000000" title="Colore annotazioni">
-  <div class="brush-control">
-    <label><span data-i18n="size">Dimensione</span>: <input type="range" id="brushSize" min="0" max="1000" value="400"></label>
-    <span id="brushSizeLabel">25</span>
+  <div class="toolbar-group">
+    <input type="file" id="fileInput" accept="image/*">
+    <button id="fileBtn" data-i18n-title="fileInputTitle" title="Carica immagine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span data-i18n="loadFile">Carica</span></button>
+    <span id="fileName"></span>
+    <input type="file" id="prjInput" accept=".mrp,.json,application/json" style="display:none">
+    <button id="loadPrjBtn" data-i18n-title="loadPrjTitle" title="Apri progetto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+    <button id="savePrjBtn" data-i18n-title="savePrjTitle" title="Salva progetto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></button>
   </div>
-  <button id="sendBtn" title="Ctrl+S"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg><span data-i18n="send">Invia</span></button>
+
+  <div class="toolbar-sep"></div>
+
+  <div class="toolbar-group">
+    <button data-tool="cursor" class="active" title="V / 1"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 2l15 8-7 2-2 7L4 2z"/></svg><span data-i18n="cursor">Cursore</span></button>
+    <button data-tool="green" title="S / 2"><svg viewBox="0 0 24 24" fill="none" stroke="#00c853" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 10 18 20 6"/></svg><span data-i18n="green">Seleziona</span></button>
+    <button data-tool="red" title="D / 3"><svg viewBox="0 0 24 24" fill="none" stroke="#ff1744" stroke-width="3" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg><span data-i18n="red">Deseleziona</span></button>
+    <button data-tool="rect" data-i18n-title="rectTitle" title="R / 6 (Alt: deseleziona)"><svg viewBox="0 0 24 24" fill="none" stroke="#00b0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 3"><rect x="3" y="5" width="18" height="14" rx="1"/></svg><span data-i18n="rect">Rettangolo</span></button>
+    <button data-tool="pen" title="P / 4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l3-1 12-12-2-2L4 18l-1 3z"/><path d="M14 6l2 2"/></svg><span data-i18n="pen">Penna</span></button>
+    <button data-tool="eraser" title="E / 5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l9-9 5 5-9 9H5l-2-2z"/><line x1="9" y1="21" x2="21" y2="21"/></svg><span data-i18n="eraser">Gomma</span></button>
+  </div>
+
+  <div class="toolbar-sep"></div>
+
+  <div class="toolbar-group">
+    <button id="revealAllBtn" data-i18n-title="revealAllTitle" title="Rivela tutto"><svg viewBox="0 0 24 24" fill="none" stroke="#00c853" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <button id="hideAllBtn" data-i18n-title="hideAllTitle" title="Nascondi tutto"><svg viewBox="0 0 24 24" fill="none" stroke="#ff1744" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button>
+    <button id="undoBtn" title="Ctrl+Z"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11a6 6 0 0 1 0 12h-3"/><polyline points="7 6 3 10 7 14"/></svg></button>
+    <button id="redoBtn" title="Ctrl+Y / Ctrl+Shift+Z"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10H10a6 6 0 0 0 0 12h3"/><polyline points="17 6 21 10 17 14"/></svg></button>
+  </div>
+
+  <div class="toolbar-sep"></div>
+
+  <div class="toolbar-group">
+    <input type="color" id="penColor" value="#000000" data-i18n-title="penColorTitle" title="Colore annotazioni">
+    <div class="brush-control">
+      <label><span data-i18n="size">Dimensione</span>: <input type="range" id="brushSize" min="0" max="1000" value="400"></label>
+      <span id="brushSizeLabel">25</span>
+    </div>
+  </div>
+
+  <div class="toolbar-group output">
+    <button id="exportBtn" data-i18n-title="exportTitle" title="Esporta PNG"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+    <button id="autoSyncBtn" data-i18n-title="autoSyncTitle" title="Sincronizzazione automatica"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span data-i18n="autoSync">Auto</span></button>
+    <button id="sendBtn" title="Ctrl+S"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg><span data-i18n="send">Invia</span></button>
+  </div>
+
+  <div class="toolbar-sep"></div>
+
   <select id="langSelect"></select>
 </div>
 
 <div id="viewport">
-  <div id="placeholder" data-i18n="placeholder">Carica un'immagine per iniziare</div>
+  <div id="placeholder" data-i18n="placeholder">Carica un'immagine per iniziare o trascinala qui</div>
   <div id="canvasContainer">
     <canvas id="imageCanvas"></canvas>
     <canvas id="maskCanvas"></canvas>
     <canvas id="annotationCanvas"></canvas>
   </div>
+  <div id="rectPreview"></div>
   <div id="brushCursor"></div>
+</div>
+
+<div id="toast"></div>
+
+<div id="resizeDialog" role="dialog" aria-modal="true">
+  <div id="resizeBox">
+    <h3 id="rdTitle">Immagine grande</h3>
+    <p id="rdMsg"></p>
+    <div class="buttons">
+      <button id="rdKeep">Mantieni originale</button>
+      <button id="rdAccept">Ridimensiona</button>
+    </div>
+  </div>
 </div>
 
 <script>
 (function() {
   // --- i18n ---
   const LANGS = {
-    it: { name: 'Italiano', cursor: 'Cursore', green: 'Seleziona', red: 'Deseleziona', pen: 'Penna', eraser: 'Gomma', size: 'Dimensione', send: 'Invia', placeholder: "Carica un'immagine per iniziare" },
-    en: { name: 'English', cursor: 'Cursor', green: 'Select', red: 'Deselect', pen: 'Pen', eraser: 'Eraser', size: 'Size', send: 'Send', placeholder: 'Load an image to start' },
-    es: { name: 'Espa\u00f1ol', cursor: 'Cursor', green: 'Seleccionar', red: 'Deseleccionar', pen: 'L\u00e1piz', eraser: 'Borrador', size: 'Tama\u00f1o', send: 'Enviar', placeholder: 'Carga una imagen para empezar' },
-    fr: { name: 'Fran\u00e7ais', cursor: 'Curseur', green: 'S\u00e9lectionner', red: 'D\u00e9s\u00e9lectionner', pen: 'Stylo', eraser: 'Gomme', size: 'Taille', send: 'Envoyer', placeholder: 'Chargez une image pour commencer' },
-    de: { name: 'Deutsch', cursor: 'Zeiger', green: 'Ausw\u00e4hlen', red: 'Abw\u00e4hlen', pen: 'Stift', eraser: 'Radierer', size: 'Gr\u00f6\u00dfe', send: 'Senden', placeholder: 'Bild laden, um zu starten' },
-    pt: { name: 'Portugu\u00eas', cursor: 'Cursor', green: 'Selecionar', red: 'Desselecionar', pen: 'Caneta', eraser: 'Borracha', size: 'Tamanho', send: 'Enviar', placeholder: 'Carregue uma imagem para come\u00e7ar' },
-    ru: { name: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439', cursor: '\u041a\u0443\u0440\u0441\u043e\u0440', green: '\u0412\u044b\u0434\u0435\u043b\u0438\u0442\u044c', red: '\u0421\u043d\u044f\u0442\u044c', pen: '\u041f\u0435\u0440\u043e', eraser: '\u041b\u0430\u0441\u0442\u0438\u043a', size: '\u0420\u0430\u0437\u043c\u0435\u0440', send: '\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c', placeholder: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435' },
-    ja: { name: '\u65e5\u672c\u8a9e', cursor: '\u30ab\u30fc\u30bd\u30eb', green: '\u9078\u629e', red: '\u9078\u629e\u89e3\u9664', pen: '\u30da\u30f3', eraser: '\u6d88\u3057\u30b4\u30e0', size: '\u30b5\u30a4\u30ba', send: '\u9001\u4fe1', placeholder: '\u753b\u50cf\u3092\u8aad\u307f\u8fbc\u3093\u3067\u304f\u3060\u3055\u3044' },
-    zh: { name: '\u4e2d\u6587', cursor: '\u5149\u6807', green: '\u9009\u62e9', red: '\u53d6\u6d88\u9009\u62e9', pen: '\u94a2\u7b14', eraser: '\u6a61\u76ae\u64e6', size: '\u5927\u5c0f', send: '\u53d1\u9001', placeholder: '\u52a0\u8f7d\u56fe\u7247\u5f00\u59cb' },
-    ko: { name: '\ud55c\uad6d\uc5b4', cursor: '\ucee4\uc11c', green: '\uc120\ud0dd', red: '\uc120\ud0dd \ud574\uc81c', pen: '\ud3b8', eraser: '\uc9c0\uc6b0\uac1c', size: '\ud06c\uae30', send: '\ubcf4\ub0b4\uae30', placeholder: '\uc774\ubbf8\uc9c0\ub97c \ub85c\ub4dc\ud558\uc138\uc694' },
-    ar: { name: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', cursor: '\u0627\u0644\u0645\u0624\u0634\u0631', green: '\u062a\u062d\u062f\u064a\u062f', red: '\u0625\u0644\u063a\u0627\u0621 \u0627\u0644\u062a\u062d\u062f\u064a\u062f', pen: '\u0642\u0644\u0645', eraser: '\u0645\u0645\u062d\u0627\u0629', size: '\u0627\u0644\u062d\u062c\u0645', send: '\u0625\u0631\u0633\u0627\u0644', placeholder: '\u062d\u0645\u0651\u0644 \u0635\u0648\u0631\u0629 \u0644\u0644\u0628\u062f\u0621' },
-    hi: { name: '\u0939\u093f\u0928\u094d\u0926\u0940', cursor: '\u0915\u0930\u094d\u0938\u0930', green: '\u091a\u0941\u0928\u0947\u0902', red: '\u0905\u091a\u092f\u0928\u093f\u0924', pen: '\u092a\u0947\u0928', eraser: '\u0930\u092c\u0930', size: '\u0906\u0915\u093e\u0930', send: '\u092d\u0947\u091c\u0947\u0902', placeholder: '\u0936\u0941\u0930\u0942 \u0915\u0930\u0928\u0947 \u0915\u0947 \u0932\u093f\u090f \u091b\u0935\u093f \u0932\u094b\u0921 \u0915\u0930\u0947\u0902' },
-    pl: { name: 'Polski', cursor: 'Kursor', green: 'Zaznacz', red: 'Odznacz', pen: 'Pi\u00f3ro', eraser: 'Gumka', size: 'Rozmiar', send: 'Wy\u015blij', placeholder: 'Za\u0142aduj obraz, aby zacz\u0105\u0107' },
-    nl: { name: 'Nederlands', cursor: 'Cursor', green: 'Selecteren', red: 'Deselecteren', pen: 'Pen', eraser: 'Gum', size: 'Grootte', send: 'Verzenden', placeholder: 'Laad een afbeelding om te beginnen' },
-    tr: { name: 'T\u00fcrk\u00e7e', cursor: '\u0130mle\u00e7', green: 'Se\u00e7', red: 'Se\u00e7imi kald\u0131r', pen: 'Kalem', eraser: 'Silgi', size: 'Boyut', send: 'G\u00f6nder', placeholder: 'Ba\u015flamak i\u00e7in bir g\u00f6rsel y\u00fckleyin' },
-    sv: { name: 'Svenska', cursor: 'Mark\u00f6r', green: 'Markera', red: 'Avmarkera', pen: 'Penna', eraser: 'Sudd', size: 'Storlek', send: 'Skicka', placeholder: 'Ladda en bild f\u00f6r att b\u00f6rja' },
+    it: { name: 'Italiano', cursor: 'Cursore', green: 'Seleziona', red: 'Deseleziona', rect: 'Rettangolo', pen: 'Penna', eraser: 'Gomma', size: 'Dimensione', send: 'Invia', sent: 'Inviato', placeholder: "Carica un'immagine per iniziare o trascinala qui", resizeTitle: 'Immagine grande', resizeMsg: 'Dimensioni: {orig}. Ridimensionare a {new} per prestazioni migliori?', keep: 'Mantieni originale', resize: 'Ridimensiona', rectTitle: 'R / 6 (Alt: deseleziona)', revealAllTitle: 'Rivela tutto', hideAllTitle: 'Nascondi tutto', penColorTitle: 'Colore annotazioni', exportTitle: 'Esporta PNG', fileInputTitle: 'Carica immagine', loadFile: 'Carica', autoSync: 'Auto', autoSyncTitle: 'Sincronizzazione automatica', autoSyncOn: 'Sync automatico attivo', autoSyncOff: 'Sync automatico disattivo', savePrjTitle: 'Salva progetto', loadPrjTitle: 'Apri progetto', importError: 'File non valido' },
+    en: { name: 'English', cursor: 'Cursor', green: 'Select', red: 'Deselect', rect: 'Rectangle', pen: 'Pen', eraser: 'Eraser', size: 'Size', send: 'Send', sent: 'Sent', placeholder: 'Load or drop an image to start', resizeTitle: 'Large image', resizeMsg: 'Dimensions: {orig}. Resize to {new} for better performance?', keep: 'Keep original', resize: 'Resize', rectTitle: 'R / 6 (Alt: deselect)', revealAllTitle: 'Reveal all', hideAllTitle: 'Hide all', penColorTitle: 'Annotation color', exportTitle: 'Export PNG', fileInputTitle: 'Load image', loadFile: 'Load', autoSync: 'Auto', autoSyncTitle: 'Auto-sync', autoSyncOn: 'Auto sync ON', autoSyncOff: 'Auto sync OFF', savePrjTitle: 'Save project', loadPrjTitle: 'Open project', importError: 'Invalid file' },
+    es: { name: 'Espa\u00f1ol', cursor: 'Cursor', green: 'Seleccionar', red: 'Deseleccionar', rect: 'Rect\u00e1ngulo', pen: 'L\u00e1piz', eraser: 'Borrador', size: 'Tama\u00f1o', send: 'Enviar', sent: 'Enviado', placeholder: 'Carga o arrastra una imagen para empezar', resizeTitle: 'Imagen grande', resizeMsg: 'Dimensiones: {orig}. \u00bfRedimensionar a {new} para mejor rendimiento?', keep: 'Mantener original', resize: 'Redimensionar', rectTitle: 'R / 6 (Alt: deseleccionar)', revealAllTitle: 'Revelar todo', hideAllTitle: 'Ocultar todo', penColorTitle: 'Color de anotaci\u00f3n', exportTitle: 'Exportar PNG', fileInputTitle: 'Cargar imagen', loadFile: 'Cargar', autoSync: 'Auto', autoSyncTitle: 'Sincronizaci\u00f3n autom\u00e1tica', autoSyncOn: 'Auto sync activado', autoSyncOff: 'Auto sync desactivado', savePrjTitle: 'Guardar proyecto', loadPrjTitle: 'Abrir proyecto', importError: 'Archivo no v\u00e1lido' },
+    fr: { name: 'Fran\u00e7ais', cursor: 'Curseur', green: 'S\u00e9lectionner', red: 'D\u00e9s\u00e9lectionner', rect: 'Rectangle', pen: 'Stylo', eraser: 'Gomme', size: 'Taille', send: 'Envoyer', sent: 'Envoy\u00e9', placeholder: 'Chargez ou glissez une image pour commencer', resizeTitle: 'Image volumineuse', resizeMsg: 'Dimensions : {orig}. Redimensionner \u00e0 {new} pour de meilleures performances ?', keep: "Conserver l'original", resize: 'Redimensionner', rectTitle: 'R / 6 (Alt : d\u00e9s\u00e9lectionner)', revealAllTitle: 'Tout r\u00e9v\u00e9ler', hideAllTitle: 'Tout masquer', penColorTitle: "Couleur d'annotation", exportTitle: 'Exporter PNG', fileInputTitle: 'Charger une image', loadFile: 'Charger', autoSync: 'Auto', autoSyncTitle: 'Synchronisation automatique', autoSyncOn: 'Auto-sync activ\u00e9', autoSyncOff: 'Auto-sync d\u00e9sactiv\u00e9', savePrjTitle: 'Enregistrer le projet', loadPrjTitle: 'Ouvrir le projet', importError: 'Fichier non valide' },
+    de: { name: 'Deutsch', cursor: 'Zeiger', green: 'Ausw\u00e4hlen', red: 'Abw\u00e4hlen', rect: 'Rechteck', pen: 'Stift', eraser: 'Radierer', size: 'Gr\u00f6\u00dfe', send: 'Senden', sent: 'Gesendet', placeholder: 'Bild laden oder hierher ziehen', resizeTitle: 'Gro\u00dfes Bild', resizeMsg: 'Abmessungen: {orig}. Auf {new} \u00e4ndern f\u00fcr bessere Leistung?', keep: 'Original behalten', resize: 'Gr\u00f6\u00dfe \u00e4ndern', rectTitle: 'R / 6 (Alt: abw\u00e4hlen)', revealAllTitle: 'Alles aufdecken', hideAllTitle: 'Alles verbergen', penColorTitle: 'Anmerkungsfarbe', exportTitle: 'PNG exportieren', fileInputTitle: 'Bild laden', loadFile: 'Laden', autoSync: 'Auto', autoSyncTitle: 'Auto-Synchronisierung', autoSyncOn: 'Auto-Sync ein', autoSyncOff: 'Auto-Sync aus', savePrjTitle: 'Projekt speichern', loadPrjTitle: 'Projekt \u00f6ffnen', importError: 'Ung\u00fcltige Datei' },
+    pt: { name: 'Portugu\u00eas', cursor: 'Cursor', green: 'Selecionar', red: 'Desselecionar', rect: 'Ret\u00e2ngulo', pen: 'Caneta', eraser: 'Borracha', size: 'Tamanho', send: 'Enviar', sent: 'Enviado', placeholder: 'Carregue ou arraste uma imagem para come\u00e7ar', resizeTitle: 'Imagem grande', resizeMsg: 'Dimens\u00f5es: {orig}. Redimensionar para {new} para melhor desempenho?', keep: 'Manter original', resize: 'Redimensionar', rectTitle: 'R / 6 (Alt: desselecionar)', revealAllTitle: 'Revelar tudo', hideAllTitle: 'Ocultar tudo', penColorTitle: 'Cor da anota\u00e7\u00e3o', exportTitle: 'Exportar PNG', fileInputTitle: 'Carregar imagem', loadFile: 'Carregar', autoSync: 'Auto', autoSyncTitle: 'Sincroniza\u00e7\u00e3o autom\u00e1tica', autoSyncOn: 'Auto sync ativado', autoSyncOff: 'Auto sync desativado', savePrjTitle: 'Salvar projeto', loadPrjTitle: 'Abrir projeto', importError: 'Arquivo inv\u00e1lido' },
+    ru: { name: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439', cursor: '\u041a\u0443\u0440\u0441\u043e\u0440', green: '\u0412\u044b\u0434\u0435\u043b\u0438\u0442\u044c', red: '\u0421\u043d\u044f\u0442\u044c', rect: '\u041f\u0440\u044f\u043c\u043e\u0443\u0433\u043e\u043b\u044c\u043d\u0438\u043a', pen: '\u041f\u0435\u0440\u043e', eraser: '\u041b\u0430\u0441\u0442\u0438\u043a', size: '\u0420\u0430\u0437\u043c\u0435\u0440', send: '\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c', sent: '\u041e\u0442\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e', placeholder: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u0438\u043b\u0438 \u043f\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435', resizeTitle: '\u0411\u043e\u043b\u044c\u0448\u043e\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435', resizeMsg: '\u0420\u0430\u0437\u043c\u0435\u0440: {orig}. \u0418\u0437\u043c\u0435\u043d\u0438\u0442\u044c \u0434\u043e {new} \u0434\u043b\u044f \u043b\u0443\u0447\u0448\u0435\u0439 \u043f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u0438?', keep: '\u041e\u0441\u0442\u0430\u0432\u0438\u0442\u044c', resize: '\u0418\u0437\u043c\u0435\u043d\u0438\u0442\u044c \u0440\u0430\u0437\u043c\u0435\u0440', rectTitle: 'R / 6 (Alt: \u0441\u043d\u044f\u0442\u044c)', revealAllTitle: '\u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0432\u0441\u0451', hideAllTitle: '\u0421\u043a\u0440\u044b\u0442\u044c \u0432\u0441\u0451', penColorTitle: '\u0426\u0432\u0435\u0442 \u043f\u043e\u043c\u0435\u0442\u043e\u043a', exportTitle: '\u042d\u043a\u0441\u043f\u043e\u0440\u0442 PNG', fileInputTitle: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435', loadFile: '\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c', autoSync: '\u0410\u0432\u0442\u043e', autoSyncTitle: '\u0410\u0432\u0442\u043e\u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u044f', autoSyncOn: '\u0410\u0432\u0442\u043e\u0441\u0438\u043d\u0445\u0440. \u0432\u043a\u043b', autoSyncOff: '\u0410\u0432\u0442\u043e\u0441\u0438\u043d\u0445\u0440. \u0432\u044b\u043a\u043b', savePrjTitle: '\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u043f\u0440\u043e\u0435\u043a\u0442', loadPrjTitle: '\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u043f\u0440\u043e\u0435\u043a\u0442', importError: '\u041d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u0444\u0430\u0439\u043b' },
+    ja: { name: '\u65e5\u672c\u8a9e', cursor: '\u30ab\u30fc\u30bd\u30eb', green: '\u9078\u629e', red: '\u9078\u629e\u89e3\u9664', rect: '\u9577\u65b9\u5f62', pen: '\u30da\u30f3', eraser: '\u6d88\u3057\u30b4\u30e0', size: '\u30b5\u30a4\u30ba', send: '\u9001\u4fe1', sent: '\u9001\u4fe1\u5b8c\u4e86', placeholder: '\u753b\u50cf\u3092\u8aad\u307f\u8fbc\u3080\u304b\u30c9\u30ed\u30c3\u30d7\u3057\u3066\u304f\u3060\u3055\u3044', resizeTitle: '\u5927\u304d\u306a\u753b\u50cf', resizeMsg: '\u30b5\u30a4\u30ba: {orig}\u3002\u30d1\u30d5\u30a9\u30fc\u30de\u30f3\u30b9\u5411\u4e0a\u306e\u305f\u3081 {new} \u306b\u5909\u66f4\u3057\u307e\u3059\u304b\uff1f', keep: '\u5143\u306e\u307e\u307e', resize: '\u30ea\u30b5\u30a4\u30ba', rectTitle: 'R / 6 (Alt: \u9078\u629e\u89e3\u9664)', revealAllTitle: '\u5168\u3066\u8868\u793a', hideAllTitle: '\u5168\u3066\u96a0\u3059', penColorTitle: '\u6ce8\u91c8\u306e\u8272', exportTitle: 'PNG\u30a8\u30af\u30b9\u30dd\u30fc\u30c8', fileInputTitle: '\u753b\u50cf\u3092\u8aad\u307f\u8fbc\u3080', loadFile: '\u8aad\u307f\u8fbc\u307f', autoSync: '\u81ea\u52d5', autoSyncTitle: '\u81ea\u52d5\u540c\u671f', autoSyncOn: '\u81ea\u52d5\u540c\u671f ON', autoSyncOff: '\u81ea\u52d5\u540c\u671f OFF', savePrjTitle: '\u30d7\u30ed\u30b8\u30a7\u30af\u30c8\u3092\u4fdd\u5b58', loadPrjTitle: '\u30d7\u30ed\u30b8\u30a7\u30af\u30c8\u3092\u958b\u304f', importError: '\u7121\u52b9\u306a\u30d5\u30a1\u30a4\u30eb' },
+    zh: { name: '\u4e2d\u6587', cursor: '\u5149\u6807', green: '\u9009\u62e9', red: '\u53d6\u6d88\u9009\u62e9', rect: '\u77e9\u5f62', pen: '\u94a2\u7b14', eraser: '\u6a61\u76ae\u64e6', size: '\u5927\u5c0f', send: '\u53d1\u9001', sent: '\u5df2\u53d1\u9001', placeholder: '\u52a0\u8f7d\u6216\u62d6\u5165\u56fe\u7247\u5f00\u59cb', resizeTitle: '\u56fe\u50cf\u8fc7\u5927', resizeMsg: '\u5c3a\u5bf8\uff1a{orig}\u3002\u7f29\u653e\u5230 {new} \u4ee5\u83b7\u5f97\u66f4\u597d\u6027\u80fd\uff1f', keep: '\u4fdd\u6301\u539f\u6837', resize: '\u7f29\u653e', rectTitle: 'R / 6 (Alt\uff1a\u53d6\u6d88\u9009\u62e9)', revealAllTitle: '\u5168\u90e8\u663e\u793a', hideAllTitle: '\u5168\u90e8\u9690\u85cf', penColorTitle: '\u6279\u6ce8\u989c\u8272', exportTitle: '\u5bfc\u51fa PNG', fileInputTitle: '\u52a0\u8f7d\u56fe\u7247', loadFile: '\u52a0\u8f7d', autoSync: '\u81ea\u52a8', autoSyncTitle: '\u81ea\u52a8\u540c\u6b65', autoSyncOn: '\u81ea\u52a8\u540c\u6b65\u5f00', autoSyncOff: '\u81ea\u52a8\u540c\u6b65\u5173', savePrjTitle: '\u4fdd\u5b58\u9879\u76ee', loadPrjTitle: '\u6253\u5f00\u9879\u76ee', importError: '\u6587\u4ef6\u65e0\u6548' },
+    ko: { name: '\ud55c\uad6d\uc5b4', cursor: '\ucee4\uc11c', green: '\uc120\ud0dd', red: '\uc120\ud0dd \ud574\uc81c', rect: '\uc9c1\uc0ac\uac01\ud615', pen: '\ud3b8', eraser: '\uc9c0\uc6b0\uac1c', size: '\ud06c\uae30', send: '\ubcf4\ub0b4\uae30', sent: '\uc804\uc1a1\ub428', placeholder: '\uc774\ubbf8\uc9c0\ub97c \ub85c\ub4dc\ud558\uac70\ub098 \ub4dc\ub86d\ud558\uc138\uc694', resizeTitle: '\ud070 \uc774\ubbf8\uc9c0', resizeMsg: '\ud06c\uae30: {orig}. \uc131\ub2a5 \ud5a5\uc0c1\uc744 \uc704\ud574 {new}\ub85c \uc870\uc815\ud558\uc2dc\uaca0\uc2b5\ub2c8\uae4c?', keep: '\uc6d0\ubcf8 \uc720\uc9c0', resize: '\ud06c\uae30 \uc870\uc815', rectTitle: 'R / 6 (Alt: \uc120\ud0dd \ud574\uc81c)', revealAllTitle: '\ubaa8\ub450 \ud45c\uc2dc', hideAllTitle: '\ubaa8\ub450 \uc228\uae30\uae30', penColorTitle: '\uc8fc\uc11d \uc0c9\uc0c1', exportTitle: 'PNG \ub0b4\ubcf4\ub0b4\uae30', fileInputTitle: '\uc774\ubbf8\uc9c0 \ub85c\ub4dc', loadFile: '\ub85c\ub4dc', autoSync: '\uc790\ub3d9', autoSyncTitle: '\uc790\ub3d9 \ub3d9\uae30\ud654', autoSyncOn: '\uc790\ub3d9 \ub3d9\uae30\ud654 \ucf2c', autoSyncOff: '\uc790\ub3d9 \ub3d9\uae30\ud654 \ub054', savePrjTitle: '\ud504\ub85c\uc81d\ud2b8 \uc800\uc7a5', loadPrjTitle: '\ud504\ub85c\uc81d\ud2b8 \uc5f4\uae30', importError: '\uc798\ubabb\ub41c \ud30c\uc77c' },
+    ar: { name: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', cursor: '\u0627\u0644\u0645\u0624\u0634\u0631', green: '\u062a\u062d\u062f\u064a\u062f', red: '\u0625\u0644\u063a\u0627\u0621 \u0627\u0644\u062a\u062d\u062f\u064a\u062f', rect: '\u0645\u0633\u062a\u0637\u064a\u0644', pen: '\u0642\u0644\u0645', eraser: '\u0645\u0645\u062d\u0627\u0629', size: '\u0627\u0644\u062d\u062c\u0645', send: '\u0625\u0631\u0633\u0627\u0644', sent: '\u062a\u0645 \u0627\u0644\u0625\u0631\u0633\u0627\u0644', placeholder: '\u062d\u0645\u0651\u0644 \u0623\u0648 \u0627\u0633\u062d\u0628 \u0635\u0648\u0631\u0629 \u0644\u0644\u0628\u062f\u0621', resizeTitle: '\u0635\u0648\u0631\u0629 \u0643\u0628\u064a\u0631\u0629', resizeMsg: '\u0627\u0644\u0623\u0628\u0639\u0627\u062f: {orig}. \u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u062d\u062c\u0645 \u0625\u0644\u0649 {new} \u0644\u0623\u062f\u0627\u0621 \u0623\u0641\u0636\u0644\u061f', keep: '\u0625\u0628\u0642\u0627\u0621 \u0627\u0644\u0623\u0635\u0644', resize: '\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u062d\u062c\u0645', rectTitle: 'R / 6 (Alt: \u0625\u0644\u063a\u0627\u0621 \u0627\u0644\u062a\u062d\u062f\u064a\u062f)', revealAllTitle: '\u0625\u0638\u0647\u0627\u0631 \u0627\u0644\u0643\u0644', hideAllTitle: '\u0625\u062e\u0641\u0627\u0621 \u0627\u0644\u0643\u0644', penColorTitle: '\u0644\u0648\u0646 \u0627\u0644\u062a\u0639\u0644\u064a\u0642', exportTitle: '\u062a\u0635\u062f\u064a\u0631 PNG', fileInputTitle: '\u062a\u062d\u0645\u064a\u0644 \u0635\u0648\u0631\u0629', loadFile: '\u062a\u062d\u0645\u064a\u0644', autoSync: '\u062a\u0644\u0642\u0627\u0626\u064a', autoSyncTitle: '\u0645\u0632\u0627\u0645\u0646\u0629 \u062a\u0644\u0642\u0627\u0626\u064a\u0629', autoSyncOn: '\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062a\u0634\u063a\u064a\u0644', autoSyncOff: '\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u0625\u064a\u0642\u0627\u0641', savePrjTitle: '\u062d\u0641\u0638 \u0627\u0644\u0645\u0634\u0631\u0648\u0639', loadPrjTitle: '\u0641\u062a\u062d \u0627\u0644\u0645\u0634\u0631\u0648\u0639', importError: '\u0645\u0644\u0641 \u063a\u064a\u0631 \u0635\u0627\u0644\u062d' },
+    hi: { name: '\u0939\u093f\u0928\u094d\u0926\u0940', cursor: '\u0915\u0930\u094d\u0938\u0930', green: '\u091a\u0941\u0928\u0947\u0902', red: '\u0905\u091a\u092f\u0928\u093f\u0924', rect: '\u0906\u092f\u0924', pen: '\u092a\u0947\u0928', eraser: '\u0930\u092c\u0930', size: '\u0906\u0915\u093e\u0930', send: '\u092d\u0947\u091c\u0947\u0902', sent: '\u092d\u0947\u091c\u093e \u0917\u092f\u093e', placeholder: '\u091b\u0935\u093f \u0932\u094b\u0921 \u0915\u0930\u0947\u0902 \u092f\u093e \u0921\u094d\u0930\u0949\u092a \u0915\u0930\u0947\u0902', resizeTitle: '\u092c\u0921\u093c\u0940 \u091b\u0935\u093f', resizeMsg: '\u0906\u092f\u093e\u092e: {orig}\u0964 \u092c\u0947\u0939\u0924\u0930 \u092a\u094d\u0930\u0926\u0930\u094d\u0936\u0928 \u0915\u0947 \u0932\u093f\u090f {new} \u092e\u0947\u0902 \u092c\u0926\u0932\u0947\u0902?', keep: '\u092e\u0942\u0932 \u0930\u0916\u0947\u0902', resize: '\u0906\u0915\u093e\u0930 \u092c\u0926\u0932\u0947\u0902', rectTitle: 'R / 6 (Alt: \u0905\u091a\u092f\u0928\u093f\u0924)', revealAllTitle: '\u0938\u092d\u0940 \u0926\u093f\u0916\u093e\u090f\u0902', hideAllTitle: '\u0938\u092d\u0940 \u091b\u093f\u092a\u093e\u090f\u0902', penColorTitle: '\u091f\u093f\u092a\u094d\u092a\u0923\u0940 \u0930\u0902\u0917', exportTitle: 'PNG \u0928\u093f\u0930\u094d\u092f\u093e\u0924', fileInputTitle: '\u091b\u0935\u093f \u0932\u094b\u0921 \u0915\u0930\u0947\u0902', loadFile: '\u0932\u094b\u0921', autoSync: '\u0911\u091f\u094b', autoSyncTitle: '\u0911\u091f\u094b-\u0938\u093f\u0902\u0915', autoSyncOn: '\u0911\u091f\u094b \u0938\u093f\u0902\u0915 \u091a\u093e\u0932\u0942', autoSyncOff: '\u0911\u091f\u094b \u0938\u093f\u0902\u0915 \u092c\u0902\u0926', savePrjTitle: '\u092a\u094d\u0930\u094b\u091c\u0947\u0915\u094d\u091f \u0938\u0939\u0947\u091c\u0947\u0902', loadPrjTitle: '\u092a\u094d\u0930\u094b\u091c\u0947\u0915\u094d\u091f \u0916\u094b\u0932\u0947\u0902', importError: '\u0905\u092e\u093e\u0928\u094d\u092f \u092b\u093c\u093e\u0907\u0932' },
+    pl: { name: 'Polski', cursor: 'Kursor', green: 'Zaznacz', red: 'Odznacz', rect: 'Prostok\u0105t', pen: 'Pi\u00f3ro', eraser: 'Gumka', size: 'Rozmiar', send: 'Wy\u015blij', sent: 'Wys\u0142ano', placeholder: 'Za\u0142aduj lub upu\u015b\u0107 obraz, aby zacz\u0105\u0107', resizeTitle: 'Du\u017cy obraz', resizeMsg: 'Wymiary: {orig}. Zmieni\u0107 na {new} dla lepszej wydajno\u015bci?', keep: 'Zachowaj orygina\u0142', resize: 'Zmie\u0144 rozmiar', rectTitle: 'R / 6 (Alt: odznacz)', revealAllTitle: 'Odkryj wszystko', hideAllTitle: 'Ukryj wszystko', penColorTitle: 'Kolor adnotacji', exportTitle: 'Eksportuj PNG', fileInputTitle: 'Za\u0142aduj obraz', loadFile: 'Za\u0142aduj', autoSync: 'Auto', autoSyncTitle: 'Automatyczna synchronizacja', autoSyncOn: 'Auto-sync wl.', autoSyncOff: 'Auto-sync wyl.', savePrjTitle: 'Zapisz projekt', loadPrjTitle: 'Otw\u00f3rz projekt', importError: 'Nieprawid\u0142owy plik' },
+    nl: { name: 'Nederlands', cursor: 'Cursor', green: 'Selecteren', red: 'Deselecteren', rect: 'Rechthoek', pen: 'Pen', eraser: 'Gum', size: 'Grootte', send: 'Verzenden', sent: 'Verzonden', placeholder: 'Laad of sleep een afbeelding om te beginnen', resizeTitle: 'Grote afbeelding', resizeMsg: 'Afmetingen: {orig}. Wijzigen naar {new} voor betere prestaties?', keep: 'Origineel behouden', resize: 'Formaat wijzigen', rectTitle: 'R / 6 (Alt: deselecteren)', revealAllTitle: 'Alles onthullen', hideAllTitle: 'Alles verbergen', penColorTitle: 'Annotatiekleur', exportTitle: 'PNG exporteren', fileInputTitle: 'Afbeelding laden', loadFile: 'Laden', autoSync: 'Auto', autoSyncTitle: 'Automatisch synchroniseren', autoSyncOn: 'Auto-sync aan', autoSyncOff: 'Auto-sync uit', savePrjTitle: 'Project opslaan', loadPrjTitle: 'Project openen', importError: 'Ongeldig bestand' },
+    tr: { name: 'T\u00fcrk\u00e7e', cursor: '\u0130mle\u00e7', green: 'Se\u00e7', red: 'Se\u00e7imi kald\u0131r', rect: 'Dikd\u00f6rtgen', pen: 'Kalem', eraser: 'Silgi', size: 'Boyut', send: 'G\u00f6nder', sent: 'G\u00f6nderildi', placeholder: 'Bir g\u00f6rsel y\u00fckleyin veya s\u00fcr\u00fckleyin', resizeTitle: 'B\u00fcy\u00fck g\u00f6rsel', resizeMsg: 'Boyutlar: {orig}. Daha iyi performans i\u00e7in {new} olarak yeniden boyutlandir\u0131ls\u0131n m\u0131?', keep: 'Orijinali koru', resize: 'Yeniden boyutland\u0131r', rectTitle: 'R / 6 (Alt: se\u00e7imi kald\u0131r)', revealAllTitle: 'T\u00fcm\u00fcn\u00fc g\u00f6ster', hideAllTitle: 'T\u00fcm\u00fcn\u00fc gizle', penColorTitle: 'Not rengi', exportTitle: 'PNG olarak d\u0131\u015fa aktar', fileInputTitle: 'G\u00f6rsel y\u00fckle', loadFile: 'Y\u00fckle', autoSync: 'Oto', autoSyncTitle: 'Otomatik senkronizasyon', autoSyncOn: 'Oto-senk a\u00e7\u0131k', autoSyncOff: 'Oto-senk kapal\u0131', savePrjTitle: 'Projeyi kaydet', loadPrjTitle: 'Projeyi a\u00e7', importError: 'Ge\u00e7ersiz dosya' },
+    sv: { name: 'Svenska', cursor: 'Mark\u00f6r', green: 'Markera', red: 'Avmarkera', rect: 'Rektangel', pen: 'Penna', eraser: 'Sudd', size: 'Storlek', send: 'Skicka', sent: 'Skickat', placeholder: 'Ladda eller sl\u00e4pp en bild f\u00f6r att b\u00f6rja', resizeTitle: 'Stor bild', resizeMsg: 'Dimensioner: {orig}. \u00c4ndra till {new} f\u00f6r b\u00e4ttre prestanda?', keep: 'Beh\u00e5ll originalet', resize: '\u00c4ndra storlek', rectTitle: 'R / 6 (Alt: avmarkera)', revealAllTitle: 'Visa allt', hideAllTitle: 'D\u00f6lj allt', penColorTitle: 'Anteckningsf\u00e4rg', exportTitle: 'Exportera PNG', fileInputTitle: 'Ladda bild', loadFile: 'Ladda', autoSync: 'Auto', autoSyncTitle: 'Auto-synkronisering', autoSyncOn: 'Auto-synk p\u00e5', autoSyncOff: 'Auto-synk av', savePrjTitle: 'Spara projekt', loadPrjTitle: '\u00d6ppna projekt', importError: 'Ogiltig fil' },
   };
 
   const langSelect = document.getElementById('langSelect');
@@ -144,6 +265,10 @@
       const key = el.dataset.i18n;
       if (t[key]) el.textContent = t[key];
     });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const key = el.dataset.i18nTitle;
+      if (t[key]) el.title = t[key];
+    });
     document.documentElement.lang = code;
     try { localStorage.setItem('mapeditor_lang', code); } catch(e) {}
   }
@@ -156,13 +281,29 @@
 
   // Elements
   const fileInput = document.getElementById('fileInput');
+  const fileBtn = document.getElementById('fileBtn');
+  const fileNameEl = document.getElementById('fileName');
   const viewport = document.getElementById('viewport');
   const container = document.getElementById('canvasContainer');
   const placeholder = document.getElementById('placeholder');
   const brushCursorEl = document.getElementById('brushCursor');
+  const rectPreviewEl = document.getElementById('rectPreview');
+  const toastEl = document.getElementById('toast');
+  const resizeDialogEl = document.getElementById('resizeDialog');
+  const rdTitle = document.getElementById('rdTitle');
+  const rdMsg = document.getElementById('rdMsg');
+  const rdKeep = document.getElementById('rdKeep');
+  const rdAcceptBtn = document.getElementById('rdAccept');
   const brushSizeInput = document.getElementById('brushSize');
   const brushSizeLabel = document.getElementById('brushSizeLabel');
   const sendBtn = document.getElementById('sendBtn');
+  const autoSyncBtn = document.getElementById('autoSyncBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const prjInput = document.getElementById('prjInput');
+  const loadPrjBtn = document.getElementById('loadPrjBtn');
+  const savePrjBtn = document.getElementById('savePrjBtn');
+  const revealAllBtn = document.getElementById('revealAllBtn');
+  const hideAllBtn = document.getElementById('hideAllBtn');
   const undoBtn = document.getElementById('undoBtn');
   const redoBtn = document.getElementById('redoBtn');
   const penColor = document.getElementById('penColor');
@@ -182,46 +323,177 @@
   let lastX = 0, lastY = 0;
   let brushRadius = 25;
   let previewWindow = null;
+  let previewReady = false;
+  let pendingMessage = null;
+  let autoSync = false;
+  let autoSyncTimer = null;
+  const AUTO_SYNC_DELAY = 350;
   let loadedImage = null;
   let maskData = null; // Uint8Array: 0=red, 1=green
   let imgWidth = 0, imgHeight = 0;
 
-  // --- Annotation undo/redo ---
-  let annotationHistory = [];
-  let annotationRedoStack = [];
+  // Rect tool state (image-space coordinates)
+  let rectStartX = 0, rectStartY = 0;
+  let rectCurX = 0, rectCurY = 0;
+
+  // --- Toast ---
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1500);
+  }
+
+  // --- Resize dialog ---
+  let resizeDialogCleanup = null;
+  function showResizeDialog(origW, origH, newW, newH, cb) {
+    const t = LANGS[langSelect.value] || LANGS.en;
+    rdTitle.textContent = t.resizeTitle || 'Large image';
+    const msg = (t.resizeMsg || 'Dimensions: {orig}. Resize to {new}?')
+      .replace('{orig}', origW + '\u00d7' + origH)
+      .replace('{new}', newW + '\u00d7' + newH);
+    rdMsg.textContent = msg;
+    rdKeep.textContent = t.keep || 'Keep original';
+    rdAcceptBtn.textContent = t.resize || 'Resize';
+    resizeDialogEl.classList.add('show');
+
+    const done = (accepted) => {
+      if (resizeDialogCleanup) resizeDialogCleanup();
+      cb(accepted);
+    };
+    const onAccept = () => done(true);
+    const onKeep = () => done(false);
+    const onKey = (e) => { if (e.key === 'Escape') done(false); };
+    resizeDialogCleanup = () => {
+      resizeDialogEl.classList.remove('show');
+      rdAcceptBtn.removeEventListener('click', onAccept);
+      rdKeep.removeEventListener('click', onKeep);
+      document.removeEventListener('keydown', onKey, true);
+      resizeDialogCleanup = null;
+    };
+    rdAcceptBtn.addEventListener('click', onAccept);
+    rdKeep.addEventListener('click', onKeep);
+    document.addEventListener('keydown', onKey, true);
+    rdAcceptBtn.focus();
+  }
+
+  // --- Unified undo/redo (mask + annotations) ---
+  // Entry shapes:
+  //   { type: 'mask', mask: Uint8Array }
+  //   { type: 'anno', imgData: ImageData|null, blob: Blob|null }
+  //     imgData is populated synchronously; async toBlob replaces it to free RAM.
+  let history = [];
+  let redoStack = [];
+  let historyBytes = 0;
+  let redoBytes = 0;
   const MAX_HISTORY = 50;
+  const MAX_HISTORY_BYTES = 256 * 1024 * 1024;
+
+  function entryBytes(e) {
+    if (e.blob) return e.blob.size;
+    if (e.imgData) return e.imgData.data.length;
+    if (e.mask) return e.mask.length;
+    return 0;
+  }
+
+  function trimHistory() {
+    while (history.length && (history.length > MAX_HISTORY || historyBytes + redoBytes > MAX_HISTORY_BYTES)) {
+      const old = history.shift();
+      historyBytes -= entryBytes(old);
+    }
+  }
+
+  function compressAnnotationEntry(entry) {
+    annotationCanvas.toBlob((blob) => {
+      if (!blob || !entry.imgData) return;
+      const prev = entry.imgData.data.length;
+      entry.blob = blob;
+      entry.imgData = null;
+      if (history.indexOf(entry) !== -1) {
+        historyBytes = historyBytes - prev + blob.size;
+        trimHistory();
+      } else if (redoStack.indexOf(entry) !== -1) {
+        redoBytes = redoBytes - prev + blob.size;
+      }
+    }, 'image/png');
+  }
+
+  function snapshotAnnotation() {
+    const entry = { type: 'anno', imgData: annotationCtx.getImageData(0, 0, imgWidth, imgHeight), blob: null };
+    compressAnnotationEntry(entry);
+    return entry;
+  }
+
+  function snapshotMask() {
+    return { type: 'mask', mask: new Uint8Array(maskData) };
+  }
+
+  function pushHistoryEntry(entry) {
+    history.push(entry);
+    historyBytes += entryBytes(entry);
+    redoStack.length = 0;
+    redoBytes = 0;
+    trimHistory();
+    updateUndoRedoButtons();
+  }
 
   function saveAnnotationState() {
     if (!imgWidth || !imgHeight) return;
-    annotationHistory.push(annotationCtx.getImageData(0, 0, imgWidth, imgHeight));
-    if (annotationHistory.length > MAX_HISTORY) annotationHistory.shift();
-    annotationRedoStack = [];
-    updateUndoRedoButtons();
+    pushHistoryEntry(snapshotAnnotation());
   }
 
-  function undoAnnotation() {
-    if (annotationHistory.length === 0) return;
-    annotationRedoStack.push(annotationCtx.getImageData(0, 0, imgWidth, imgHeight));
-    const prev = annotationHistory.pop();
-    annotationCtx.putImageData(prev, 0, 0);
-    updateUndoRedoButtons();
+  function saveMaskState() {
+    if (!maskData) return;
+    pushHistoryEntry(snapshotMask());
   }
 
-  function redoAnnotation() {
-    if (annotationRedoStack.length === 0) return;
-    annotationHistory.push(annotationCtx.getImageData(0, 0, imgWidth, imgHeight));
-    const next = annotationRedoStack.pop();
-    annotationCtx.putImageData(next, 0, 0);
+  async function restoreEntry(entry) {
+    if (entry.type === 'mask') {
+      maskData.set(entry.mask);
+      renderMaskRegion(0, 0, imgWidth, imgHeight);
+    } else if (entry.imgData) {
+      annotationCtx.putImageData(entry.imgData, 0, 0);
+    } else if (entry.blob) {
+      const bmp = await createImageBitmap(entry.blob);
+      annotationCtx.clearRect(0, 0, imgWidth, imgHeight);
+      annotationCtx.drawImage(bmp, 0, 0);
+      if (bmp.close) bmp.close();
+    }
+  }
+
+  async function undoAction() {
+    if (history.length === 0) return;
+    const entry = history.pop();
+    historyBytes -= entryBytes(entry);
+    const redoEntry = entry.type === 'mask' ? snapshotMask() : snapshotAnnotation();
+    redoStack.push(redoEntry);
+    redoBytes += entryBytes(redoEntry);
     updateUndoRedoButtons();
+    await restoreEntry(entry);
+    triggerAutoSync();
+  }
+
+  async function redoAction() {
+    if (redoStack.length === 0) return;
+    const entry = redoStack.pop();
+    redoBytes -= entryBytes(entry);
+    const undoEntry = entry.type === 'mask' ? snapshotMask() : snapshotAnnotation();
+    history.push(undoEntry);
+    historyBytes += entryBytes(undoEntry);
+    trimHistory();
+    updateUndoRedoButtons();
+    await restoreEntry(entry);
+    triggerAutoSync();
   }
 
   function updateUndoRedoButtons() {
-    undoBtn.disabled = annotationHistory.length === 0;
-    redoBtn.disabled = annotationRedoStack.length === 0;
+    undoBtn.disabled = history.length === 0;
+    redoBtn.disabled = redoStack.length === 0;
   }
 
-  undoBtn.addEventListener('click', undoAnnotation);
-  redoBtn.addEventListener('click', redoAnnotation);
+  undoBtn.addEventListener('click', undoAction);
+  redoBtn.addEventListener('click', redoAction);
   updateUndoRedoButtons();
 
   // --- Tool selection ---
@@ -238,6 +510,9 @@
   function updateCursorStyle() {
     if (currentTool === 'cursor') {
       viewport.style.cursor = 'grab';
+      brushCursorEl.style.display = 'none';
+    } else if (currentTool === 'rect') {
+      viewport.style.cursor = 'crosshair';
       brushCursorEl.style.display = 'none';
     } else {
       viewport.style.cursor = 'none';
@@ -256,11 +531,10 @@
     ));
   }
 
-  // On-image diameter for the current tool's mark
   function effectiveDiameter() {
     if (currentTool === 'pen') return Math.max(2, brushRadius / 4);
     if (currentTool === 'eraser') return brushRadius;
-    return brushRadius * 2; // green/red brush (radius -> diameter)
+    return brushRadius * 2;
   }
 
   function syncBrushFromSlider() {
@@ -271,7 +545,6 @@
   brushSizeInput.addEventListener('input', syncBrushFromSlider);
   syncBrushFromSlider();
 
-  // Scroll wheel over slider to adjust brush size (slider position step)
   brushSizeInput.addEventListener('wheel', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -279,50 +552,108 @@
   }, { passive: false });
 
   // --- File loading ---
-  fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        loadedImage = img;
-        initCanvases(img);
-        placeholder.style.display = 'none';
+  const MAX_IMAGE_DIM = 4096;
+  const MAX_IMAGE_PIXELS = 16 * 1024 * 1024;
 
-        // Open preview window with unique name
-        const previewName = 'preview_' + Date.now();
-        previewWindow = window.open('preview.html', previewName);
-      };
-      img.src = ev.target.result;
+  function scaledDims(w, h) {
+    const byDim = Math.min(MAX_IMAGE_DIM / w, MAX_IMAGE_DIM / h, 1);
+    const byPixels = Math.sqrt(MAX_IMAGE_PIXELS / (w * h));
+    const s = Math.min(byDim, byPixels, 1);
+    if (s >= 1) return null;
+    return { w: Math.max(1, Math.round(w * s)), h: Math.max(1, Math.round(h * s)) };
+  }
+
+  function resizeImageToCanvas(src, targetW, targetH) {
+    const c = document.createElement('canvas');
+    c.width = targetW;
+    c.height = targetH;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, targetW, targetH);
+    return c;
+  }
+
+  function loadImageFile(file) {
+    if (!file || !file.type || !file.type.startsWith('image/')) return;
+    fileNameEl.textContent = file.name;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const target = scaledDims(w, h);
+      if (target) {
+        showResizeDialog(w, h, target.w, target.h, (accepted) => {
+          applyLoadedSource(accepted ? resizeImageToCanvas(img, target.w, target.h) : img);
+        });
+      } else {
+        applyLoadedSource(img);
+      }
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => { URL.revokeObjectURL(url); };
+    img.src = url;
+  }
+
+  function applyLoadedSource(src) {
+    loadedImage = src;
+    initCanvases(src);
+    placeholder.style.display = 'none';
+    openOrReusePreview();
+  }
+
+  function openOrReusePreview() {
+    if (!previewWindow || previewWindow.closed) {
+      previewReady = false;
+      const previewName = 'preview_' + Date.now();
+      previewWindow = window.open('preview.html', previewName);
+    }
+  }
+
+  fileInput.addEventListener('change', (e) => {
+    loadImageFile(e.target.files[0]);
+  });
+  fileBtn.addEventListener('click', () => fileInput.click());
+
+  // --- Drag & drop on viewport ---
+  viewport.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    viewport.classList.add('drag-over');
+  });
+  viewport.addEventListener('dragleave', (e) => {
+    if (!viewport.contains(e.relatedTarget)) {
+      viewport.classList.remove('drag-over');
+    }
+  });
+  viewport.addEventListener('drop', (e) => {
+    e.preventDefault();
+    viewport.classList.remove('drag-over');
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) loadImageFile(file);
   });
 
   function initCanvases(img) {
-    imgWidth = img.naturalWidth;
-    imgHeight = img.naturalHeight;
+    imgWidth = img.naturalWidth || img.width;
+    imgHeight = img.naturalHeight || img.height;
 
-    // Size all canvases
     [imageCanvas, maskCanvas, annotationCanvas].forEach(c => {
       c.width = imgWidth;
       c.height = imgHeight;
     });
 
-    // Draw image
     imageCtx.drawImage(img, 0, 0);
 
-    // Init mask data (all red = 0)
+    // Init mask data (all red = 0) and paint canvas in one fill
     maskData = new Uint8Array(imgWidth * imgHeight);
-    renderFullMask();
+    fillMaskSolid(0);
 
-    // Clear annotations and reset undo history
     annotationCtx.clearRect(0, 0, imgWidth, imgHeight);
-    annotationHistory = [];
-    annotationRedoStack = [];
+    history = [];
+    redoStack = [];
+    historyBytes = 0;
+    redoBytes = 0;
     updateUndoRedoButtons();
 
-    // Fit to viewport
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
     scale = Math.min(vw / imgWidth, vh / imgHeight) * 0.95;
@@ -331,18 +662,15 @@
     applyTransform();
   }
 
-  function renderFullMask() {
-    const imgData = maskCtx.createImageData(imgWidth, imgHeight);
-    const d = imgData.data;
-    for (let i = 0; i < maskData.length; i++) {
-      const idx = i * 4;
-      if (maskData[i] === 1) {
-        d[idx] = 0; d[idx+1] = 200; d[idx+2] = 0; d[idx+3] = 70;
-      } else {
-        d[idx] = 200; d[idx+1] = 0; d[idx+2] = 0; d[idx+3] = 90;
-      }
+  // Single-color fill of the mask canvas (no per-pixel loop)
+  function fillMaskSolid(value) {
+    maskCtx.clearRect(0, 0, imgWidth, imgHeight);
+    if (value === 1) {
+      maskCtx.fillStyle = 'rgba(0,200,0,0.275)'; // alpha ~70/255
+    } else {
+      maskCtx.fillStyle = 'rgba(200,0,0,0.353)'; // alpha ~90/255
     }
-    maskCtx.putImageData(imgData, 0, 0);
+    maskCtx.fillRect(0, 0, imgWidth, imgHeight);
   }
 
   function renderMaskRegion(x1, y1, x2, y2) {
@@ -373,6 +701,7 @@
   // --- Transform ---
   function applyTransform() {
     container.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+    updateRectPreview();
   }
 
   // --- Coordinate conversion ---
@@ -427,6 +756,34 @@
     renderMaskRegion(minX, minY, maxX, maxY);
   }
 
+  // --- Rectangle tool ---
+  function stampRect(x1, y1, x2, y2, value) {
+    const ix1 = Math.max(0, Math.floor(Math.min(x1, x2)));
+    const iy1 = Math.max(0, Math.floor(Math.min(y1, y2)));
+    const ix2 = Math.min(imgWidth, Math.ceil(Math.max(x1, x2)));
+    const iy2 = Math.min(imgHeight, Math.ceil(Math.max(y1, y2)));
+    if (ix2 <= ix1 || iy2 <= iy1) return;
+    for (let py = iy1; py < iy2; py++) {
+      const rowStart = py * imgWidth;
+      for (let px = ix1; px < ix2; px++) {
+        maskData[rowStart + px] = value;
+      }
+    }
+    renderMaskRegion(ix1, iy1, ix2, iy2);
+  }
+
+  function updateRectPreview() {
+    if (rectPreviewEl.style.display !== 'block') return;
+    const x1 = Math.min(rectStartX, rectCurX);
+    const y1 = Math.min(rectStartY, rectCurY);
+    const x2 = Math.max(rectStartX, rectCurX);
+    const y2 = Math.max(rectStartY, rectCurY);
+    rectPreviewEl.style.left = (panX + x1 * scale) + 'px';
+    rectPreviewEl.style.top = (panY + y1 * scale) + 'px';
+    rectPreviewEl.style.width = ((x2 - x1) * scale) + 'px';
+    rectPreviewEl.style.height = ((y2 - y1) * scale) + 'px';
+  }
+
   // --- Pointer events ---
   viewport.addEventListener('pointerdown', (e) => {
     if (!loadedImage) return;
@@ -440,9 +797,19 @@
       lastX = e.clientX;
       lastY = e.clientY;
     } else if (currentTool === 'green') {
+      saveMaskState();
       stampLine(pos.x, pos.y, pos.x, pos.y, 1);
     } else if (currentTool === 'red') {
+      saveMaskState();
       stampLine(pos.x, pos.y, pos.x, pos.y, 0);
+    } else if (currentTool === 'rect') {
+      rectStartX = pos.x;
+      rectStartY = pos.y;
+      rectCurX = pos.x;
+      rectCurY = pos.y;
+      rectPreviewEl.classList.toggle('deselect', e.altKey);
+      rectPreviewEl.style.display = 'block';
+      updateRectPreview();
     } else if (currentTool === 'pen') {
       saveAnnotationState();
       annotationCtx.globalCompositeOperation = 'source-over';
@@ -469,8 +836,8 @@
   viewport.addEventListener('pointermove', (e) => {
     const pos = screenToCanvas(e);
 
-    // Brush cursor
-    if (currentTool !== 'cursor' && loadedImage) {
+    // Brush cursor (skip for cursor/rect tools)
+    if (currentTool !== 'cursor' && currentTool !== 'rect' && loadedImage) {
       brushCursorEl.style.display = 'block';
       brushCursorEl.style.left = e.clientX + 'px';
       brushCursorEl.style.top = e.clientY + 'px';
@@ -484,6 +851,8 @@
         brushCursorEl.style.borderColor = 'rgba(200,0,0,0.8)';
       } else if (currentTool === 'eraser') {
         brushCursorEl.style.borderColor = 'rgba(255,171,64,0.8)';
+      } else if (currentTool === 'pen') {
+        brushCursorEl.style.borderColor = penColor.value;
       } else {
         brushCursorEl.style.borderColor = 'rgba(255,255,255,0.6)';
       }
@@ -507,6 +876,11 @@
       stampLine(lastX, lastY, pos.x, pos.y, 0);
       lastX = pos.x;
       lastY = pos.y;
+    } else if (currentTool === 'rect') {
+      rectCurX = pos.x;
+      rectCurY = pos.y;
+      rectPreviewEl.classList.toggle('deselect', e.altKey);
+      updateRectPreview();
     } else if (currentTool === 'pen' || currentTool === 'eraser') {
       annotationCtx.lineTo(pos.x, pos.y);
       annotationCtx.stroke();
@@ -515,17 +889,35 @@
     }
   });
 
-  viewport.addEventListener('pointerup', () => {
-    if (isDown && (currentTool === 'pen' || currentTool === 'eraser')) {
-      annotationCtx.globalCompositeOperation = 'source-over';
+  viewport.addEventListener('pointerup', (e) => {
+    let modified = false;
+    if (isDown) {
+      if (currentTool === 'pen' || currentTool === 'eraser') {
+        annotationCtx.globalCompositeOperation = 'source-over';
+        modified = true;
+      } else if (currentTool === 'rect') {
+        const rx1 = Math.min(rectStartX, rectCurX);
+        const ry1 = Math.min(rectStartY, rectCurY);
+        const rx2 = Math.max(rectStartX, rectCurX);
+        const ry2 = Math.max(rectStartY, rectCurY);
+        if (rx2 - rx1 >= 1 && ry2 - ry1 >= 1) {
+          saveMaskState();
+          stampRect(rectStartX, rectStartY, rectCurX, rectCurY, e.altKey ? 0 : 1);
+          modified = true;
+        }
+        rectPreviewEl.style.display = 'none';
+      } else if (currentTool === 'green' || currentTool === 'red') {
+        modified = true;
+      }
     }
     isDown = false;
     if (currentTool === 'cursor') {
       viewport.style.cursor = 'grab';
     }
+    if (modified) triggerAutoSync();
   });
 
-  // --- Wheel: brush size for brush tools, zoom with Ctrl (or always on cursor tool) ---
+  // --- Wheel: brush size for brush tools, zoom otherwise (or with Ctrl) ---
   const BRUSH_TOOLS = new Set(['green', 'red', 'pen', 'eraser']);
 
   viewport.addEventListener('wheel', (e) => {
@@ -535,17 +927,14 @@
     const isBrushTool = BRUSH_TOOLS.has(currentTool);
 
     if (isBrushTool && !e.ctrlKey && !e.metaKey) {
-      // Adjust brush size
       const step = e.deltaY < 0 ? 25 : -25;
       adjustBrush(step);
-      // Update brush cursor diameter immediately
       const diameter = effectiveDiameter() * scale;
       brushCursorEl.style.width = diameter + 'px';
       brushCursorEl.style.height = diameter + 'px';
       return;
     }
 
-    // Zoom
     const oldScale = scale;
     const factor = e.deltaY < 0 ? 1.1 : 0.9;
     scale = Math.min(10, Math.max(0.05, scale * factor));
@@ -559,47 +948,268 @@
     applyTransform();
   }, { passive: false });
 
-  // --- Send to preview ---
-  sendBtn.addEventListener('click', () => {
-    if (!loadedImage || !maskData) return;
+  // --- Reveal all / Hide all ---
+  revealAllBtn.addEventListener('click', () => {
+    if (!maskData) return;
+    saveMaskState();
+    maskData.fill(1);
+    fillMaskSolid(1);
+    triggerAutoSync();
+  });
+  hideAllBtn.addEventListener('click', () => {
+    if (!maskData) return;
+    saveMaskState();
+    maskData.fill(0);
+    fillMaskSolid(0);
+    triggerAutoSync();
+  });
 
-    if (!previewWindow || previewWindow.closed) {
-      const previewName = 'preview_' + Date.now();
-      previewWindow = window.open('preview.html', previewName);
-    }
-
-    // Build revealed image: original image with non-green pixels transparent
-    const offscreen = document.createElement('canvas');
-    offscreen.width = imgWidth;
-    offscreen.height = imgHeight;
-    const offCtx = offscreen.getContext('2d');
-    offCtx.drawImage(imageCanvas, 0, 0);
-
-    const imgPixels = offCtx.getImageData(0, 0, imgWidth, imgHeight);
+  // --- Build revealed image (used by Send and Export) ---
+  function buildRevealedCanvas() {
+    const off = document.createElement('canvas');
+    off.width = imgWidth;
+    off.height = imgHeight;
+    const ctx = off.getContext('2d');
+    ctx.drawImage(imageCanvas, 0, 0);
+    const imgPixels = ctx.getImageData(0, 0, imgWidth, imgHeight);
     const d = imgPixels.data;
     for (let i = 0; i < maskData.length; i++) {
-      if (maskData[i] === 0) {
-        d[i * 4 + 3] = 0; // alpha = 0 for red areas
+      if (maskData[i] === 0) d[i * 4 + 3] = 0;
+    }
+    ctx.putImageData(imgPixels, 0, 0);
+    return off;
+  }
+
+  // --- Project save/load (image + mask + annotations) ---
+  function loadImageFromUrl(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  function maskToCanvas() {
+    const c = document.createElement('canvas');
+    c.width = imgWidth; c.height = imgHeight;
+    const ctx = c.getContext('2d');
+    const id = ctx.createImageData(imgWidth, imgHeight);
+    const d = id.data;
+    for (let i = 0; i < maskData.length; i++) {
+      const v = maskData[i] * 255;
+      d[i*4] = v; d[i*4+1] = v; d[i*4+2] = v; d[i*4+3] = 255;
+    }
+    ctx.putImageData(id, 0, 0);
+    return c;
+  }
+
+  function projectFileBaseName() {
+    const name = (fileNameEl.textContent || '').trim();
+    if (!name) return 'map-project';
+    const dot = name.lastIndexOf('.');
+    const base = dot > 0 ? name.slice(0, dot) : name;
+    return base.replace(/\.mrp$/i, '') || 'map-project';
+  }
+
+  savePrjBtn.addEventListener('click', () => {
+    if (!loadedImage || !maskData) return;
+    const project = {
+      type: 'maprevealer-project',
+      version: 1,
+      width: imgWidth,
+      height: imgHeight,
+      image: imageCanvas.toDataURL('image/png'),
+      mask: maskToCanvas().toDataURL('image/png'),
+      annotations: annotationCanvas.toDataURL('image/png')
+    };
+    const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = projectFileBaseName() + '.mrp';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  loadPrjBtn.addEventListener('click', () => prjInput.click());
+
+  prjInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) loadProjectFile(file);
+    prjInput.value = '';
+  });
+
+  async function loadProjectFile(file) {
+    let proj;
+    try {
+      const text = await file.text();
+      proj = JSON.parse(text);
+      if (!proj || proj.type !== 'maprevealer-project') throw new Error('bad type');
+      if (!proj.width || !proj.height || !proj.image || !proj.mask || !proj.annotations) throw new Error('missing fields');
+    } catch (err) {
+      const t = LANGS[langSelect.value] || LANGS.en;
+      showToast(t.importError || 'Invalid file');
+      return;
+    }
+
+    let imgEl, maskImg, annImg;
+    try {
+      [imgEl, maskImg, annImg] = await Promise.all([
+        loadImageFromUrl(proj.image),
+        loadImageFromUrl(proj.mask),
+        loadImageFromUrl(proj.annotations)
+      ]);
+    } catch (err) {
+      const t = LANGS[langSelect.value] || LANGS.en;
+      showToast(t.importError || 'Invalid file');
+      return;
+    }
+
+    imgWidth = proj.width;
+    imgHeight = proj.height;
+    [imageCanvas, maskCanvas, annotationCanvas].forEach(c => { c.width = imgWidth; c.height = imgHeight; });
+
+    imageCtx.drawImage(imgEl, 0, 0);
+
+    // Decode mask: R channel > 127 means selected (1)
+    const tmp = document.createElement('canvas');
+    tmp.width = imgWidth; tmp.height = imgHeight;
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(maskImg, 0, 0);
+    const md = tctx.getImageData(0, 0, imgWidth, imgHeight).data;
+    maskData = new Uint8Array(imgWidth * imgHeight);
+    for (let i = 0; i < maskData.length; i++) {
+      maskData[i] = md[i*4] > 127 ? 1 : 0;
+    }
+    renderMaskRegion(0, 0, imgWidth, imgHeight);
+
+    annotationCtx.clearRect(0, 0, imgWidth, imgHeight);
+    annotationCtx.drawImage(annImg, 0, 0);
+
+    loadedImage = imgEl;
+    history = []; redoStack = []; historyBytes = 0; redoBytes = 0;
+    updateUndoRedoButtons();
+    placeholder.style.display = 'none';
+    fileNameEl.textContent = file.name;
+
+    const vw = viewport.clientWidth, vh = viewport.clientHeight;
+    scale = Math.min(vw / imgWidth, vh / imgHeight) * 0.95;
+    panX = (vw - imgWidth * scale) / 2;
+    panY = (vh - imgHeight * scale) / 2;
+    applyTransform();
+
+    openOrReusePreview();
+    triggerAutoSync();
+  }
+
+  // --- Export PNG (revealed image + annotations flattened) ---
+  exportBtn.addEventListener('click', () => {
+    if (!loadedImage || !maskData) return;
+    const off = buildRevealedCanvas();
+    off.getContext('2d').drawImage(annotationCanvas, 0, 0);
+    off.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'map-revealed.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, 'image/png');
+  });
+
+  // --- Send to preview (with ready handshake, zero-copy ImageBitmap) ---
+  function doPost(payload) {
+    const { msg, transferables } = payload;
+    if (transferables && transferables.length) {
+      previewWindow.postMessage(msg, '*', transferables);
+    } else {
+      previewWindow.postMessage(msg, '*');
+    }
+  }
+
+  function postToPreview(msg, transferables) {
+    const payload = { msg, transferables };
+    if (previewReady && previewWindow && !previewWindow.closed) {
+      doPost(payload);
+    } else {
+      // Drop any queued message: the queued bitmaps would otherwise leak if superseded.
+      if (pendingMessage && pendingMessage.transferables) {
+        pendingMessage.transferables.forEach(t => { if (t && t.close) t.close(); });
+      }
+      pendingMessage = payload;
+    }
+  }
+
+  window.addEventListener('message', (e) => {
+    if (!e.data || e.data.type !== 'ready') return;
+    if (previewWindow && e.source === previewWindow) {
+      previewReady = true;
+      if (pendingMessage) {
+        doPost(pendingMessage);
+        pendingMessage = null;
       }
     }
-    offCtx.putImageData(imgPixels, 0, 0);
+  });
 
-    const revealedDataURL = offscreen.toDataURL('image/png');
-    const annotationDataURL = annotationCanvas.toDataURL('image/png');
+  async function doSend(silent) {
+    if (!loadedImage || !maskData) return;
+    clearTimeout(autoSyncTimer);
+
+    openOrReusePreview();
+
+    const off = buildRevealedCanvas();
+    const [revealedBmp, annotationBmp] = await Promise.all([
+      createImageBitmap(off),
+      createImageBitmap(annotationCanvas)
+    ]);
 
     const msg = {
       type: 'mapUpdate',
-      revealed: revealedDataURL,
-      annotations: annotationDataURL,
+      revealed: revealedBmp,
+      annotations: annotationBmp,
       width: imgWidth,
       height: imgHeight
     };
 
-    // Small delay to ensure preview window is loaded if just opened
-    setTimeout(() => {
-      previewWindow.postMessage(msg, '*');
-    }, 500);
-  });
+    postToPreview(msg, [revealedBmp, annotationBmp]);
+
+    if (!silent) {
+      const t = LANGS[langSelect.value] || LANGS.en;
+      showToast(t.sent || 'Sent');
+    }
+  }
+
+  sendBtn.addEventListener('click', () => doSend(false));
+
+  function triggerAutoSync() {
+    if (!autoSync || !loadedImage) return;
+    clearTimeout(autoSyncTimer);
+    autoSyncTimer = setTimeout(() => doSend(true), AUTO_SYNC_DELAY);
+  }
+
+  function setAutoSync(on, fromUser) {
+    autoSync = !!on;
+    autoSyncBtn.classList.toggle('active', autoSync);
+    try { localStorage.setItem('mapeditor_autosync', autoSync ? '1' : '0'); } catch(e) {}
+    if (!autoSync) clearTimeout(autoSyncTimer);
+    if (fromUser) {
+      const t = LANGS[langSelect.value] || LANGS.en;
+      showToast(autoSync ? (t.autoSyncOn || 'Auto sync ON') : (t.autoSyncOff || 'Auto sync OFF'));
+      if (autoSync) triggerAutoSync();
+    }
+  }
+
+  autoSyncBtn.addEventListener('click', () => setAutoSync(!autoSync, true));
+
+  try {
+    if (localStorage.getItem('mapeditor_autosync') === '1') setAutoSync(true, false);
+  } catch(e) {}
 
   // --- Keyboard shortcuts ---
   let toolBeforeSpace = null;
@@ -618,21 +1228,18 @@
   }
 
   document.addEventListener('keydown', (e) => {
-    // Ctrl/Cmd shortcuts first
     if (e.ctrlKey || e.metaKey) {
       const k = e.key.toLowerCase();
-      if (k === 'z' && e.shiftKey) { e.preventDefault(); redoAnnotation(); return; }
-      if (k === 'z') { e.preventDefault(); undoAnnotation(); return; }
-      if (k === 'y') { e.preventDefault(); redoAnnotation(); return; }
+      if (k === 'z' && e.shiftKey) { e.preventDefault(); redoAction(); return; }
+      if (k === 'z') { e.preventDefault(); undoAction(); return; }
+      if (k === 'y') { e.preventDefault(); redoAction(); return; }
       if (k === 's') { e.preventDefault(); sendBtn.click(); return; }
       if (k === 'o') { e.preventDefault(); fileInput.click(); return; }
       return;
     }
 
-    // Ignore when typing in inputs/selects
     if (isTypingTarget(e.target)) return;
 
-    // Space held = temporary pan/cursor
     if (e.code === 'Space' && !e.repeat) {
       e.preventDefault();
       if (currentTool !== 'cursor') {
@@ -642,20 +1249,17 @@
       return;
     }
 
-    // Escape = back to cursor
     if (e.key === 'Escape') { selectTool('cursor'); return; }
 
-    // Brush size
     if (e.key === '[') { adjustBrush(-25); return; }
     if (e.key === ']') { adjustBrush(25); return; }
 
-    // Numbers
     if (e.key === '1') selectTool('cursor');
     else if (e.key === '2') selectTool('green');
     else if (e.key === '3') selectTool('red');
     else if (e.key === '4') selectTool('pen');
     else if (e.key === '5') selectTool('eraser');
-    // Letters (mnemonic, Photoshop-style)
+    else if (e.key === '6') selectTool('rect');
     else {
       const k = e.key.toLowerCase();
       if (k === 'v') selectTool('cursor');
@@ -663,6 +1267,7 @@
       else if (k === 'd') selectTool('red');
       else if (k === 'p') selectTool('pen');
       else if (k === 'e') selectTool('eraser');
+      else if (k === 'r') selectTool('rect');
     }
   });
 
@@ -681,7 +1286,6 @@
     updateCursorStyle();
   }
 
-  // Hide brush cursor when leaving viewport
   viewport.addEventListener('pointerleave', () => {
     brushCursorEl.style.display = 'none';
   });

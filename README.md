@@ -1,96 +1,69 @@
 # Map Revealer
 
-A two-page HTML/CSS/JavaScript application for masking regions of an image in an editor window and transmitting the unmasked portion to a separate preview window.
+Two-window tool for revealing pieces of a map (or any image) one bit at a time. The editor is where you paint over what should stay hidden or become visible; the preview window shows only the revealed portion, ready to be put on a second screen for someone else to look at.
 
-## Architecture
+Built for tabletop role-playing sessions where the GM wants to gradually expose a map to the players, but it works for anything where you want to control what part of an image another person sees.
 
-| File | Role |
+## How it works
+
+Open `index.html` in any modern browser. Load an image — the editor covers it with a red overlay (everything is hidden) and opens a second window for the preview.
+
+From there:
+
+- **Select** brush paints green on the areas the players should see.
+- **Deselect** brush goes back to red.
+- **Rectangle** does the same as a single drag — hold `Alt` to deselect with it.
+- **Pen** and **Eraser** add freehand annotations on top, in any color.
+- **Reveal all** / **Hide all** flip the whole map at once.
+- Pan with the cursor tool or by holding `Space`. Zoom with `Ctrl`+wheel.
+
+When you're ready, click **Send** (or `Ctrl+S`) and the preview updates with the revealed image plus annotations. Or turn on **Auto** and the preview updates by itself a fraction of a second after every change.
+
+## Saving your work
+
+- **Export PNG** writes the current revealed view (image + annotations, holes where the mask is) as a flat PNG.
+- **Save project** / **Open project** save and reopen a `.mrp` file containing the original image, the mask, and your annotations, so you can pick up exactly where you left off in another session.
+
+## Shortcuts
+
+| | |
 | --- | --- |
-| `index.html` | Editor. Holds the full-resolution image, a binary mask, and an annotation layer. |
-| `preview.html` | Receiver. Renders only the data pushed to it by the editor. |
+| `V` `1` | Cursor |
+| `S` `2` | Select |
+| `D` `3` | Deselect |
+| `R` `6` | Rectangle (`Alt` = deselect) |
+| `P` `4` | Pen |
+| `E` `5` | Eraser |
+| `[` `]` | Brush size |
+| `Space` | Hold for temporary pan |
+| `Esc` | Back to cursor |
+| `Ctrl`+`Z` / `Ctrl`+`Y` | Undo / redo |
+| `Ctrl`+`S` | Send to preview |
+| `Ctrl`+`O` | Open image |
+| Wheel | Brush size (or zoom with `Ctrl`) |
 
-Inter-window communication uses `window.postMessage` with a wildcard target origin. No server, no backend, no build step, no external dependencies.
+In the preview: `F` or double-click for fullscreen.
 
-### Editor canvas stack
+## Languages
 
-Three `<canvas>` elements stacked in a container, all sized to the image's natural dimensions. Pan/zoom is applied to the container via CSS `transform`, so the three layers move in lockstep without per-canvas redraws.
+UI in 16 languages. The selector is at the top-right; the choice is remembered between sessions and applies to the preview window too.
 
-| Layer | Purpose |
-| --- | --- |
-| `imageCanvas` | The loaded image, drawn once. |
-| `maskCanvas` | Overlay rendered from `maskData`, a `Uint8Array` of length `width * height` (`0` = hidden, `1` = revealed). Repaints only the dirty rectangle per brush stamp. |
-| `annotationCanvas` | Freehand strokes from the pen and eraser tools. |
+## Running it
 
-### Data transmission
-
-When the user triggers *Send*, the editor builds an offscreen canvas, draws the image, sets alpha to `0` for every pixel where `maskData === 0`, serializes the result and the annotation canvas to PNG data URLs, and posts both (plus the dimensions) to the preview window. The preview replaces its canvas contents on every message.
-
-## Usage
-
-1. Open `index.html` in a browser. Double-clicking the file is sufficient; the application runs from `file://`.
-2. Load an image via the file input. The editor initializes with a red overlay covering the entire image and automatically opens `preview.html` in a new window.
-3. Paint with the *Select* brush to mark areas as revealed (green overlay replaces red). Paint with *Deselect* to restore the red overlay. Use *Pen* and *Eraser* to manage annotations in any color.
-4. Click *Send* (or `Ctrl+S`) to push the current revealed image and annotations to the preview window. The preview updates on each send.
-
-### Multiple instances
-
-Each editor tab opens its preview with a unique window name (timestamp-based), so `index.html` can be opened in any number of tabs simultaneously. Each editor communicates only with its own preview window; instances do not interfere with one another.
-
-## Running locally
-
-Opening `index.html` directly from the filesystem works in Chromium-based browsers, Firefox, and Safari. The `postMessage` call uses `'*'` as the target origin, which is permitted between same-origin `file://` windows.
-
-If the host environment restricts script execution from `file://`, serve the directory over HTTP:
+The application is two static HTML files and runs from `file://` — double-click `index.html` and you're done. If your browser refuses to run scripts from disk, serve the folder over HTTP:
 
 ```bash
 python -m http.server 8000
-# or
-npx serve .
-# or VS Code's Live Server extension
 ```
 
-## Keyboard shortcuts
+then open `http://localhost:8000`.
 
-### Editor
-
-| Shortcut | Action |
-| --- | --- |
-| `V` / `1` | Cursor (pan and zoom) |
-| `S` / `2` | Select brush (reveal) |
-| `D` / `3` | Deselect brush (hide) |
-| `P` / `4` | Pen |
-| `E` / `5` | Eraser |
-| `[` / `]` | Decrease / increase brush size |
-| `Space` (hold) | Temporary pan; releases back to previous tool |
-| `Esc` | Switch to cursor tool |
-| `Ctrl` + `Z` | Undo annotation stroke |
-| `Ctrl` + `Y` or `Ctrl` + `Shift` + `Z` | Redo annotation stroke |
-| `Ctrl` + `S` | Send to preview |
-| `Ctrl` + `O` | Open image file |
-| Mouse wheel | Adjust brush size (when a brush tool is active) |
-| `Ctrl` + wheel | Zoom |
-
-### Preview
-
-| Shortcut | Action |
-| --- | --- |
-| `F` | Toggle fullscreen |
-| Double-click on image | Toggle fullscreen |
-| `Esc` | Exit fullscreen (browser default) |
-<
-## Localization
-
-UI strings are available in 16 languages: Italian, English, Spanish, French, German, Portuguese, Russian, Japanese, Chinese, Korean, Arabic, Hindi, Polish, Dutch, Turkish, Swedish. The selected language is persisted in `localStorage` under `mapeditor_lang` and propagates to the preview window via the `storage` event.
-
-## Browser requirements
-
-Canvas 2D, Pointer Events, `window.postMessage`, `localStorage`, and the Fullscreen API.
-
-## Project structure
+## Project files
 
 ```
 .
-├── index.html      Editor (inline CSS + JS)
-├── preview.html    Preview (inline CSS + JS)
-└── README.md
+├── index.html        Editor
+├── preview.html      Preview window
+├── README.md         This file
+└── ARCHITECTURE.md   Technical notes (canvas layout, message protocol, history, file format)
 ```

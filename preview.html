@@ -271,7 +271,12 @@
     }
   });
 
-  // --- Receive data from editor ---
+  // --- Announce readiness to opener ---
+  if (window.opener && !window.opener.closed) {
+    try { window.opener.postMessage({ type: 'ready' }, '*'); } catch(e) {}
+  }
+
+  // --- Receive data from editor (ImageBitmap transferables) ---
   window.addEventListener('message', (e) => {
     if (!e.data || e.data.type !== 'mapUpdate') return;
 
@@ -284,19 +289,13 @@
 
     fitToViewport(width, height);
 
-    const img1 = new Image();
-    img1.onload = () => {
-      revealedCtx.clearRect(0, 0, width, height);
-      revealedCtx.drawImage(img1, 0, 0);
-    };
-    img1.src = revealed;
+    revealedCtx.clearRect(0, 0, width, height);
+    revealedCtx.drawImage(revealed, 0, 0);
+    annotationCtx.clearRect(0, 0, width, height);
+    annotationCtx.drawImage(annotations, 0, 0);
 
-    const img2 = new Image();
-    img2.onload = () => {
-      annotationCtx.clearRect(0, 0, width, height);
-      annotationCtx.drawImage(img2, 0, 0);
-    };
-    img2.src = annotations;
+    if (revealed.close) revealed.close();
+    if (annotations.close) annotations.close();
 
     waiting.style.display = 'none';
   });
