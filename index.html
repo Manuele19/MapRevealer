@@ -349,6 +349,7 @@
   let loadedImage = null;
   let maskData = null; // Uint8Array: 0=red, 1=green
   let imgWidth = 0, imgHeight = 0;
+  let imageFileName = '';
 
   // Rect tool state (image-space coordinates)
   let rectStartX = 0, rectStartY = 0;
@@ -615,7 +616,8 @@
 
   function loadImageFile(file) {
     if (!file || !file.type || !file.type.startsWith('image/')) return;
-    fileNameEl.textContent = file.name;
+    imageFileName = file.name;
+    fileNameEl.textContent = imageFileName;
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -1098,7 +1100,7 @@
   }
 
   function projectFileBaseName() {
-    const name = (fileNameEl.textContent || '').trim();
+    const name = (imageFileName || fileNameEl.textContent || '').trim();
     if (!name) return 'map-project';
     const dot = name.lastIndexOf('.');
     const base = dot > 0 ? name.slice(0, dot) : name;
@@ -1112,6 +1114,7 @@
       version: 1,
       width: imgWidth,
       height: imgHeight,
+      imageFile: imageFileName,
       image: imageCanvas.toDataURL('image/png'),
       mask: maskToCanvas().toDataURL('image/png'),
       annotations: annotationCanvas.toDataURL('image/png'),
@@ -1198,7 +1201,8 @@
     updateCropBorder();
 
     placeholder.style.display = 'none';
-    fileNameEl.textContent = file.name;
+    imageFileName = (typeof proj.imageFile === 'string' && proj.imageFile) ? proj.imageFile : file.name;
+    fileNameEl.textContent = imageFileName;
 
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
     scale = Math.min(vw / imgWidth, vh / imgHeight) * 0.95;
@@ -1228,7 +1232,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'map-revealed.png';
+      a.download = projectFileBaseName() + '.png';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
