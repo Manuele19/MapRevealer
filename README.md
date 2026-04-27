@@ -12,7 +12,8 @@ From there:
 
 - **Select** brush paints green on the areas the players should see.
 - **Deselect** brush goes back to red.
-- **Rectangle** does the same as a single drag — hold `Alt` to deselect with it.
+- **Rectangle** does the same as a single drag — hold `Ctrl` to deselect with it.
+- **Crop** (`C` / `7`) draws a region; the preview and PNG export are restricted to it. Use the **Clear crop** button to remove it.
 - **Pen** and **Eraser** add freehand annotations on top, in any color.
 - **Reveal all** / **Hide all** flip the whole map at once.
 - Pan with the cursor tool or by holding `Space`. Zoom with `Ctrl`+wheel.
@@ -31,7 +32,8 @@ When you're ready, click **Send** (or `Ctrl+S`) and the preview updates with the
 | `V` `1` | Cursor |
 | `S` `2` | Select |
 | `D` `3` | Deselect |
-| `R` `6` | Rectangle (`Alt` = deselect) |
+| `R` `6` | Rectangle (`Ctrl` = deselect) |
+| `C` `7` | Crop |
 | `P` `4` | Pen |
 | `E` `5` | Eraser |
 | `[` `]` | Brush size |
